@@ -44,6 +44,7 @@ services:
       context: .
       dockerfile: infra/api.Dockerfile
     environment:
+      TOOLMESH_EMBEDDING_PATH: /models/discovery
       TOOLMESH_DATABASE_URL: postgresql+asyncpg://toolmesh_app:${TOOLMESH_APP_PASSWORD}@postgres/toolmesh
       TOOLMESH_INVENTORY_SECRET: ${TOOLMESH_INVENTORY_SECRET:?Set TOOLMESH_INVENTORY_SECRET in .env}
       TOOLMESH_IT_SECRET: ${TOOLMESH_IT_SECRET:?Set TOOLMESH_IT_SECRET in .env}
@@ -57,6 +58,8 @@ services:
       TOOLMESH_ADMIN_PASSWORD: ${TOOLMESH_ADMIN_PASSWORD:?Set TOOLMESH_ADMIN_PASSWORD in .env}
       TOOLMESH_SUPPORT_PASSWORD: ${TOOLMESH_SUPPORT_PASSWORD:?Set TOOLMESH_SUPPORT_PASSWORD in .env}
       TOOLMESH_PAYMENTS_PASSWORD: ${TOOLMESH_PAYMENTS_PASSWORD:?Set TOOLMESH_PAYMENTS_PASSWORD in .env}
+    volumes:
+      - ./.models/discovery:/models/discovery:ro
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:

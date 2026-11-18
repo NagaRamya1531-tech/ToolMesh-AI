@@ -16,10 +16,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.exceptions import HTTPException
 
+from benchmarks.api import build_evaluation_api
+from benchmarks.evaluation import Evaluations
 from control_plane.catalog import Catalog
 from control_plane.crawler import Crawler
 from control_plane.sources import Target
 from gateway.config import Settings
+from gateway.discovery import Discovery
+from gateway.embeddings import Embeddings
 from gateway.identity import Identity
 from gateway.interfaces import build_api, build_mcp
 from gateway.limits import LimitBody
@@ -76,6 +80,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def secret(value):
         return value.get_secret_value() if value else ""
 
+    embeddings = Embeddings(config.embedding_path)
+    discovery = Discovery(engine, embeddings)
+    evaluations = Evaluations(engine, embeddings)
     runtime = Runtime(
         engine,
         redis,
@@ -84,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         secret(config.communication_secret),
         secret(config.inventory_secret),
         secret(config.it_secret),
+        discovery=discovery,
     )
     crawler = Crawler(
         engine,
@@ -104,7 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) = ARRAY['0005']::varchar[]"
+                    "FROM alembic_version) = ARRAY['0006']::varchar[]"
                 )
             )
             return all(result.one())
@@ -123,9 +131,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         try:
             async with mcp.lifespan(mcp):
+                await embeddings.load()
                 workers = [
                     asyncio.create_task(runtime.approvals.worker()),
                     asyncio.create_task(crawler.worker()),
+                    asyncio.create_task(discovery.worker()),
+                    asyncio.create_task(evaluations.worker()),
                 ]
                 try:
                     yield
@@ -202,6 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             checks={"postgres": postgres, "redis": redis_status},
         )
 
+    app.include_router(build_evaluation_api(identity, evaluations))
     app.include_router(build_api(identity, runtime, Catalog(engine), crawler))
     app.mount("/mcp", mcp)
     return app

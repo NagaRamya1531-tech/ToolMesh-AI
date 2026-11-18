@@ -5,3 +5,7 @@
 **/dist
 **/__pycache__
 **/test-results
+
+.models
+
+benchmarks/results

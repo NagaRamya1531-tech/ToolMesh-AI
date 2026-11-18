@@ -7,6 +7,7 @@ import { Executions, Playground, Registry, Services, type Session, SignIn } from
 import { Approvals, Audit, OverviewActivity } from "./governance";
 import { DuplicateWorkflow } from "./duplicate-workflow";
 import { Crawler } from "./crawler";
+import { Evaluations } from "./evaluations";
 import "./styles.css";
 
 const groups = [
@@ -19,7 +20,7 @@ const groups = [
 const queryClient = new QueryClient();
 
 const routes: Record<string, string> = {
-  Overview: "/", Services: "/services", Registry: "/tools", Playground: "/playground", Executions: "/executions", Approvals: "/approvals", Audit: "/audit", AutoCrawler: "/crawler",
+  Overview: "/", Services: "/services", Registry: "/tools", Playground: "/playground", Executions: "/executions", Approvals: "/approvals", Audit: "/audit", AutoCrawler: "/crawler", Evaluations: "/evaluations",
 };
 
 function Navigation({ onNavigate }: { onNavigate?: () => void }) {
@@ -139,6 +140,7 @@ function App() {
           <Route path="/approvals" element={secure(Approvals)} />
           <Route path="/audit" element={secure(Audit)} />
           <Route path="/crawler" element={secure(Crawler)} />
+          <Route path="/evaluations" element={secure(Evaluations)} />
           <Route path="*" element={<main id="main" tabIndex={-1}><h1>Page unavailable</h1><Link to="/">Back to Overview</Link></main>} />
         </Routes>
       </div>

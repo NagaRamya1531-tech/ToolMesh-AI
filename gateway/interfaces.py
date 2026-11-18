@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from control_plane.catalog import Catalog
 from control_plane.crawler import Crawler
+from gateway.discovery import Strategy
 from gateway.identity import Identity, Principal
 from gateway.runtime import Runtime
 from gateway.workflow import DuplicateWorkflow
@@ -32,6 +33,7 @@ class Search(BaseModel):
     query: Query = ""
     service_id: Key | None = None
     limit: Limit = 20
+    strategy: Strategy = "keyword"
 
 
 class Invocation(BaseModel):
@@ -101,6 +103,7 @@ class ToolSummary(BaseModel):
     version: int
     description: str
     risk: str
+    rank: int
 
 
 class ToolSchema(BaseModel):
@@ -148,8 +151,9 @@ def public_tools(values: list[dict]) -> list[dict]:
             "version": row["version"],
             "description": row["contract"]["description"],
             "risk": row["contract"]["risk"],
+            "rank": rank,
         }
-        for row in values
+        for rank, row in enumerate(values, 1)
     ]
 
 
@@ -196,7 +200,9 @@ def build_api(
     @router.post("/discovery/search", response_model=list[ToolSummary])
     async def search(body: Search, principal: Principal = Depends(caller)):
         return public_tools(
-            await runtime.tools(principal, body.service_id, body.query, body.limit)
+            await runtime.tools(
+                principal, body.service_id, body.query, body.limit, body.strategy
+            )
         )
 
     @router.get("/discovery/tools/{tool_id}/schema", response_model=ToolSchema)
@@ -406,12 +412,15 @@ def build_mcp(identity: Identity, runtime: Runtime, hosts: list[str]):
 
     @server.tool
     async def discover_tools(
-        server_id: Key, query: Query = "", limit: Limit = 20
+        server_id: Key,
+        query: Query = "",
+        limit: Limit = 20,
+        strategy: Strategy = "keyword",
     ) -> dict:
         """List permitted published tools without expanding their schemas."""
         return {
             "tools": public_tools(
-                await runtime.tools(await caller(), server_id, query, limit)
+                await runtime.tools(await caller(), server_id, query, limit, strategy)
             )
         }
 

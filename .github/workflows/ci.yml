@@ -20,11 +20,12 @@ jobs:
       - run: uv sync --locked --python 3.12
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
-      - run: uv run --locked mypy gateway control_plane shared services
+      - run: uv run --locked mypy gateway control_plane shared services benchmarks
       - run: npm --prefix apps/web ci
       - run: npm --prefix apps/web run build
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
+      - run: HF_HUB_DISABLE_XET=1 uv run --locked python -m gateway.embeddings --output .models/discovery
       - name: Bootstrap and verify real dependencies
         run: |
           cp .env.example .env
@@ -33,7 +34,8 @@ jobs:
           docker compose run --rm migrate
       - run: TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
       - run: npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
-      - run: TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
+      - run: npm --prefix apps/web run test:e2e -- evaluations.spec.ts
+      - run: TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
       - name: Scan working tree for secrets
         run: |
           docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.0 dir /repo --redact --no-banner --config /repo/.gitleaks.toml

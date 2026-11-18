@@ -8,7 +8,7 @@ export { Screen, State } from "./screen";
 
 export type Session = { token: string; id: string; kind: "human" | "agent" };
 type Service = { id: string; name: string; protocol: string; owner: string; published_tools: number; health: string; checked_at: string|null; health_error: string|null };
-type Tool = { id: string; service_id: string; version: number; description: string; risk: string };
+type Tool = { id: string; service_id: string; version: number; description: string; risk: string; rank: number };
 type Contract = { description: string; input_schema: object; output_schema: object; risk: string };
 type Definition = { id: string; service_id: string; version: number; active_version: number | null; lifecycle: string; contract: Contract };
 type Run = { id: string; status: string; error_code: string | null; result: unknown; approval_id?: string | null };
@@ -209,6 +209,8 @@ export function Registry({ session }: { session: Session }) {
 
 export function Playground({ session }: { session: Session }) {
   const [selected, setSelected] = useState("");
+  const [discovery, setDiscovery] = useState({query:"",strategy:"keyword"});
+  const [draft,setDraft] = useState({query:"",strategy:"keyword"});
   const [argumentsText, setArguments] = useState("{}");
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   const [run, setRun] = useState<Run | null>(null);
@@ -216,8 +218,9 @@ export function Playground({ session }: { session: Session }) {
   const [pending, setPending] = useState(false);
   const client = useQueryClient();
   const tools = useQuery({
-    queryKey: ["discovery", session.id],
-    queryFn: () => call<Tool[]>("/discovery/search", session.token, { query: "", limit: 50 }),
+    queryKey: ["discovery", session.id, discovery.query, discovery.strategy],
+    queryFn: () => call<Tool[]>("/discovery/search", session.token, { ...discovery, limit: 50 }),
+    retry:false,
   });
   const schema = useQuery({
     queryKey: ["schema", session.id, selected],
@@ -248,11 +251,20 @@ export function Playground({ session }: { session: Session }) {
   }
   return <Screen name="Playground" description="Run one published sandbox tool using the signed-in identity.">
     <p><Link to="/playground/duplicate-payment">Open scripted duplicate-payment workflow</Link></p>
+    <form className="panel form-panel" onSubmit={(event)=>{
+      event.preventDefault();setSelected("");setRun(null);setError("");setDiscovery(draft);
+    }}>
+      <label>Search query<input maxLength={128} value={draft.query} onChange={(event)=>setDraft({...draft,query:event.target.value})} /></label>
+      <label>Discovery strategy<select value={draft.strategy} onChange={(event)=>setDraft({...draft,strategy:event.target.value})}>
+        <option value="keyword">Keyword</option><option value="vector">Vector</option><option value="hybrid">Hybrid</option>
+      </select></label>
+      <button disabled={pending}>Search published tools</button>
+    </form>
     <State loading={tools.isPending} error={tools.error} retry={tools.refetch}>
       {tools.data?.length === 0 && <p>No published tools are available to this identity.</p>}
-      <form className="panel form-panel" onSubmit={invoke}>
+      <form className="panel form-panel invocation-form" onSubmit={invoke}>
         <label>Tool<select value={selected} onChange={(event) => {setSelected(event.target.value); setRequestKey(crypto.randomUUID()); setRun(null); setError("");}} disabled={pending}>
-          <option value="">Choose a tool</option>{tools.data?.map((tool) => <option value={tool.id} key={tool.id}>{tool.id}</option>)}
+          <option value="">Choose a tool</option>{tools.data?.map((tool) => <option value={tool.id} key={tool.id}>{discovery.query ? `${tool.rank}. ${tool.id}` : tool.id}</option>)}
         </select></label>
         {selected && <State loading={schema.isPending} error={schema.error} retry={schema.refetch}>
           {schema.data && <details><summary>Input contract · v{schema.data.version}</summary><pre>{JSON.stringify(schema.data.contract.input_schema, null, 2)}</pre></details>}

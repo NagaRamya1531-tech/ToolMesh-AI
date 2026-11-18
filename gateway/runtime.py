@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from control_plane.sources import resolve
 from gateway.approvals import Approvals, event
+from gateway.discovery import Discovery, Strategy
 from gateway.grpc_adapter import call_it
 from gateway.identity import Principal
 from shared.contracts import TOOLS, tool_contract
@@ -37,6 +38,7 @@ class Runtime:
         communication_secret: str = "",
         inventory_secret: str = "",
         it_secret: str = "",
+        discovery: Discovery | None = None,
     ):
         self.db = db
         self.redis = redis
@@ -46,6 +48,7 @@ class Runtime:
         self.inventory_secret = inventory_secret
         self.it_secret = it_secret
         self.approvals = Approvals(db, self.downstream)
+        self.discovery = discovery
 
     async def tools(
         self,
@@ -53,29 +56,11 @@ class Runtime:
         service: str | None = None,
         query: str = "",
         limit: int = 20,
+        strategy: Strategy = "keyword",
     ):
-        async with self.db.connect() as conn:
-            return await rows(
-                conn,
-                CATALOG
-                + """
-                AND ((v.contract->>'risk' = 'read') OR (v.contract->>'risk' = 'write' AND :can_write)
-                    OR (v.contract->>'risk' = 'approval' AND EXISTS (
-                        SELECT 1 FROM refund_grants WHERE principal=:principal AND enabled AND customer_id=:customer)))
-                AND (:service = '' OR t.service_id = :service)
-                AND (strpos(lower(t.id || ' ' || (v.contract->>'description')), lower(:query)) > 0
-                     OR :query = '')
-                ORDER BY CASE WHEN strpos(lower(t.id), lower(:query)) > 0 THEN 0 ELSE 1 END, t.id
-                LIMIT :limit
-            """,
-                services=list(principal.services),
-                can_write=principal.can_write,
-                principal=principal.id,
-                customer=principal.customer,
-                service=service or "",
-                query=query,
-                limit=limit,
-            )
+        if self.discovery is None:
+            raise HTTPException(503, "DISCOVERY_UNAVAILABLE")
+        return await self.discovery.tools(principal, service, query, limit, strategy)
 
     async def servers(self, principal: Principal, query: str, limit: int):
         async with self.db.connect() as conn:

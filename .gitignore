@@ -9,3 +9,8 @@ node_modules/
 dist/
 playwright-report/
 test-results/
+
+/.models/*
+!/.models/discovery/
+/.models/discovery/*
+!/.models/discovery/.gitkeep

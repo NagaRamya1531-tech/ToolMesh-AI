@@ -16,3 +16,7 @@ The sandbox is intended for local use. External exposure requires a separate dep
 ### Crawler boundary
 
 Crawler requests are limited to configured target IDs, protocols and ports. Name resolution is IPv4-only in the local sandbox and must yield RFC 1918 addresses. The crawler connects to a validated IP and sends the configured authority to the local service. HTTP clients refuse redirects and environment proxies. External OpenAPI references, unconfigured routes and unsupported inventory schema features cannot activate an adapter. The local Docker administrator controls DNS and networking. Arbitrary external registrations, TLS discovery and gRPC reflection are outside M3.
+
+### Discovery and benchmark boundaries
+
+The ranking query filters service grants, active versions, write permission and the current refund grant before either lexical or vector scoring. It returns scoped names and ranks. Query embeddings run in the API process using a pinned, checksum-verified local artifact. The API startup leaves model provisioning offline, and semantic requests fail visibly when the artifact or index is unavailable. Benchmark definitions reside in an isolated table and cannot be looked up or invoked through the runtime registry. Administrators control evaluation and export of its generated case data.

@@ -1,5 +1,17 @@
 # Changelog
 
+## M4 · Ranked discovery and retrieval evaluation
+
+- Added authorization-prefiltered PostgreSQL full-text search, pgvector cosine ranking with a pinned CPU model, and reciprocal rank fusion in REST, MCP and Playground tool discovery.
+- Added a reproducible synthetic retrieval dataset with disjoint tuning and test scope groups. Durable administrator-only evaluation runs report progress, comparative and per-domain results, missed cases, negative-case returns, and downloadable JSON and CSV.
+- Published the raw 10,000-definition, 1,000-case held-out run. Measured Recall@5 was 71.2% for keyword, 81.7% for vector and 89.5% for hybrid. Every strategy returned candidates for all negative cases. Method, measured SQL timings, and limitations appear in [the evaluation report](docs/discovery-evaluation.md).
+
+### Verification
+
+- Applied migration `0006` to the existing sandbox and repeated the migration on a fresh stack. Thirteen Python checks and nine Chromium checks passed, including scoped ranking, hybrid Playground search and evaluation export.
+- The first local semantic smoke test detected a model dimension check that counted the serialized vector string. The check now validates the vector dimensions, and real inference and evaluation passed on rerun.
+- The secret scan identified a public pinned tokenizer checksum. The allowlist covers only that checksum in the embedding module. Local lint, formatting, type checks and the production frontend build passed.
+
 ## M3 · AutoCrawler, release lifecycle and gRPC IT
 
 - Added allowlisted service registration, editable display names, live connection checks and persisted health observations.

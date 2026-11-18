@@ -1,6 +1,6 @@
 # ToolMesh AI
 
-ToolMesh AI is an enterprise MCP gateway and operations console in development. M2 adds a guided duplicate-payment investigation with a separate Finance request, human approval, a sandbox refund ledger, and simulated notification and ticket resolution.
+ToolMesh AI is an enterprise MCP gateway and operations console in development. It includes an approval-gated duplicate-payment workflow, versioned service discovery, and a reproducible evaluation console for keyword, vector, and hybrid retrieval.
 
 ## Start the local sandbox
 
@@ -29,13 +29,13 @@ docker compose down
 
 ## Verify locally
 
-Use Python 3.12, uv, Node 22 and npm for host checks. Start the Compose stack before the integration and browser checks.
+Use Python 3.12, uv, Node 22 and npm for host checks. Provision the pinned embedding model before the full integration and browser verification, then start the Compose stack.
 
 ```sh
 uv sync --locked --python 3.12
 uv run --locked ruff check .
 uv run --locked ruff format --check .
-uv run --locked mypy gateway control_plane shared services
+uv run --locked mypy gateway control_plane shared services benchmarks
 docker compose run --rm migrate
 
 npm --prefix apps/web ci
@@ -43,7 +43,8 @@ npm --prefix apps/web run build
 (cd apps/web && npx playwright install chromium)
 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
 npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
-TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
+npm --prefix apps/web run test:e2e -- evaluations.spec.ts
+TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
 ```
 
 Omit `TOOLMESH_TEST_API` to run just the standalone Python checks. The integration and browser suites publish sandbox contracts and write test records. Use a disposable Compose project for a clean demonstration, and set `TOOLMESH_EXPECT_DRAFT=1` to require browser publication from an unpublished draft. Override `TOOLMESH_TEST_WEB` for a different console port. On a disposable sandbox, stop Redis with `docker compose stop redis`. A new readiness check should report HTTP 503 with Redis unavailable, while liveness stays HTTP 200. Run `docker compose up -d --wait redis api` to restore service.
@@ -53,6 +54,27 @@ For an independent working-tree secret scan:
 ```sh
 docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.0 dir /repo --redact --no-banner --config /repo/.gitleaks.toml
 ```
+
+## M4 discovery and evaluations
+
+Keyword discovery uses PostgreSQL full-text search and works on a clean sandbox. To enable vector and hybrid search and benchmark runs, explicitly download the pinned CPU model into the read-only model mount, then restart the API.
+
+```sh
+uv sync --locked --python 3.12
+HF_HUB_DISABLE_XET=1 uv run --locked python -m gateway.embeddings --output .models/discovery
+docker compose up --build -d --wait
+docker compose restart api
+```
+
+In **Playground**, submit a query with **Keyword**, **Vector**, or **Hybrid** selected. Results contain only eligible published tools and show retrieval ranks. An empty query browses eligible tools. A semantic query reports an explicit error when the model is missing or the relevant active index is incomplete.
+
+Sign in as the platform administrator and open **Evaluations**. Choose a catalog size, case count and split, start the job, inspect the comparison and failed examples, and export JSON or CSV. The catalog consists of generated, non-executable benchmark definitions. The measured full-catalog baseline reports serialized schema bytes. Model-provider token counts and LLM workflow comparisons are tracked separately.
+
+```sh
+uv run --locked python -m benchmarks.run --definitions 10000 --cases 1000 --split test --output /tmp/toolmesh-m4-retrieval.json.gz
+```
+
+[Measured results and methodology](docs/discovery-evaluation.md) · [Evaluation screenshot](docs/screenshots/m4-evaluations.png)
 
 ## M3 walkthrough
 

@@ -7,3 +7,10 @@ paths = [
   '''(^|/)\.env$''',
   '''(^|/)(\.git|\.venv|node_modules|dist|test-results|playwright-report)/''',
 ]
+
+[[allowlists]]
+description = "Public SHA-256 checksum of the pinned Model2Vec tokenizer"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(^|/)gateway/embeddings\.py$''']
+regexes = ['''^e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50$''']

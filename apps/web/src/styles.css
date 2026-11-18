@@ -120,3 +120,7 @@ pre { padding: 12px; background: #11131e; border: 1px solid var(--line); border-
 .outcomes { list-style: none; padding: 0; }
 .outcomes li { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr; gap: 12px; padding-block: 4px; }
 .outcomes meter { width: 100%; accent-color: var(--accent); }
+
+.invocation-form { margin-top: 16px; }
+.evaluation-details { margin: 12px 0; }
+.evaluation-details .example { border-top: 1px solid var(--line); padding: 0 8px; }

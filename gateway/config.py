@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,3 +24,5 @@ class Settings(BaseSettings):
     it_password: SecretStr | None = None
     it_secret: SecretStr | None = None
     inventory_secret: SecretStr | None = None
+
+    embedding_path: Path = Path(".models/discovery")
