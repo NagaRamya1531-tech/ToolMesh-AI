@@ -12,6 +12,12 @@
 - The first local semantic smoke test detected a model dimension check that counted the serialized vector string. The check now validates the vector dimensions, and real inference and evaluation passed on rerun.
 - The secret scan identified a public pinned tokenizer checksum. The allowlist covers only that checksum in the embedding module. Local lint, formatting, type checks and the production frontend build passed.
 
+### Documentation follow-up
+
+- Reorganized the README around problem, architecture, operations, measurement, and roadmap. Added the runbook, ADR index, and milestone documentation checklist.
+- Added Mermaid diagrams for the control and data planes, discovery, execution, approvals, version lifecycle, database relationships, recovery, and Compose deployment.
+- Rendered all 11 diagrams with Mermaid CLI 10.9.1 and 11.17.1, verified relative links and anchors, and checked the README benchmark table against the stored M4 export.
+
 ## M3 · AutoCrawler, release lifecycle and gRPC IT
 
 - Added allowlisted service registration, editable display names, live connection checks and persisted health observations.

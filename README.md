@@ -1,127 +1,166 @@
 # ToolMesh AI
 
-ToolMesh AI is an enterprise MCP gateway and operations console in development. It includes an approval-gated duplicate-payment workflow, versioned service discovery, and a reproducible evaluation console for keyword, vector, and hybrid retrieval.
+ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M4**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes a reproducible retrieval benchmark.
 
-## Start the local sandbox
+## Contents
 
-Install Docker with the Compose v2 plugin and start its daemon. From the repository root:
+- [Problem and approach](#problem-and-approach)
+- [Quick start](#quick-start)
+- [Architecture](#architecture)
+- [Security and approvals](#security-and-approvals)
+- [Operations console](#operations-console)
+- [Benchmarks](#benchmarks)
+- [Development and testing](#development-and-testing)
+- [Repository layout](#repository-layout)
+- [Roadmap](#roadmap)
+- [Limitations](#limitations)
+
+## Problem and approach
+
+Internal agents need to find the right operation across APIs that use different protocols, schema conventions, and access rules. Loading the full tool catalog into each request consumes context and exposes capabilities the caller may never use. Connecting directly to individual services also distributes the responsibility for authorization, version compatibility, and execution evidence.
+
+ToolMesh publishes reviewed contracts in a versioned registry. An authenticated client discovers eligible operations, fetches a schema on demand, and invokes the selected version through the gateway. The gateway enforces service, operation, and customer scope before dispatch. Sensitive sandbox refunds require a separate human decision and produce a persisted receipt and audit trail.
+
+## Quick start
+
+Install Docker with the Compose v2 plugin. From the repository root:
 
 ```sh
 cp -n .env.example .env
 docker compose config --quiet
 docker compose up --build -d --wait
+curl -fsS http://127.0.0.1:8000/readyz
 ```
 
-Open the [local console](http://127.0.0.1:5173) or inspect the [API contract](http://127.0.0.1:8000/docs). Only the API and web ports bind to the host, on loopback. Change `API_PORT` and `WEB_PORT` in `.env` if needed. The passwords in the template are local examples. Choose URL-safe values before first startup. Postgres initializes role passwords only on an empty volume.
+Open the [console](http://127.0.0.1:5173), [REST API contract](http://127.0.0.1:8000/docs), or [MCP Streamable HTTP endpoint](http://127.0.0.1:8000/mcp/). Sign in as `platform-admin` with the value of `TOOLMESH_ADMIN_PASSWORD` in your local `.env`. Start with the [single-tool walkthrough](docs/runbook.md#invoke-a-single-tool) or try the [approval-gated refund workflow](docs/runbook.md#run-the-duplicate-payment-workflow).
 
-The one-shot `migrate` service provisions pgvector, the default sandbox workspace, the M1 catalog and isolated domain schemas. It inserts deterministic synthetic payment fixtures and version 1 tool drafts. The migration exits successfully before the domain services and API start.
+The one-shot Alembic job provisions pgvector, the workspace, isolated domain schemas, and deterministic synthetic fixtures. It exits before the API and domain services start. The console and gateway bind to loopback. Shutdown with `docker compose down` preserves PostgreSQL data.
 
-When upgrading an earlier checkout, merge the new `TOOLMESH_*` keys from `.env.example` into the existing `.env` before starting Compose. Preserve the original database password values. The domain database passwords provision the domain roles during migration. Changing them after migration requires updating the matching database roles.
+On upgrade, merge new keys from `.env.example` into the existing `.env`. Preserve database passwords unless you also update the database roles. The [runbook](docs/runbook.md) covers bootstrap failures, Redis outages, and the refund timeout reproduction.
+
+### Enable local embeddings
+
+Keyword retrieval works with the base stack. Vector and hybrid retrieval and evaluation runs use a pinned, checksum-verified model. Provision it explicitly using Python 3.12 and uv:
 
 ```sh
-curl -fsS http://127.0.0.1:8000/healthz
-curl -fsS http://127.0.0.1:8000/readyz
-docker compose ps -a
-docker compose down
+uv sync --locked --python 3.12
+HF_HUB_DISABLE_XET=1 uv run --locked python -m gateway.embeddings --output .models/discovery
+docker compose restart api
 ```
 
-`docker compose down` keeps the database volume. If startup fails, inspect `docker compose logs postgres migrate api web`. An interrupted first initialization can leave a partially initialized volume. To inspect a clean bootstrap without deleting data, use a different Compose project with unused host ports.
+The weights stay in the ignored local model directory and are mounted read-only. The gateway reports missing model or index state explicitly for semantic searches.
 
-## Verify locally
+## Architecture
 
-Use Python 3.12, uv, Node 22 and npm for host checks. Provision the pinned embedding model before the full integration and browser verification, then start the Compose stack.
+The control plane and data plane run in one gateway process. Their modules have distinct responsibilities and share PostgreSQL where registry and execution changes must be transactional.
+
+```mermaid
+flowchart LR
+    Console["Operations console"] --> Control["Control plane"]
+    Client["MCP client or Playground"] --> Runtime["Data plane"]
+    Control --> Store[("PostgreSQL and pgvector")]
+    Runtime --> Store
+    Runtime --> Redis[("Redis")]
+    Runtime --> Services["REST, MCP, and gRPC services"]
+    Services --> Domains[("Isolated domain schemas")]
+```
+
+| Layer | Responsibility |
+|---|---|
+| Control plane | Allowlisted registration and crawling, immutable draft contracts, review, publication, quarantine, rollback, and evaluation jobs |
+| Data plane | Authenticated discovery and invocation, active-version and scope checks, input validation, quotas, dispatch, and execution records |
+| Domain services | Payments and Inventory over REST, Support and Communication over native MCP, and IT Operations over gRPC |
+
+[Control and data plane diagrams, request sequences, ER diagrams, and deployment](docs/architecture.md) · [Architecture decisions](docs/adr/README.md)
+
+## Security and approvals
+
+The gateway uses expiring opaque sandbox sessions, current grants, and operation and customer scope checks. Ranking runs over the authorized active catalog. The crawler accepts configured targets, checks resolved addresses, and pins the connection address. Domain services have separate credentials and PostgreSQL roles.
+
+A Finance requester submits an idempotent refund request. A different actor with the approver grant reviews the bound amount, currency, customer, transaction, and tool version. The gateway records the decision atomically, rechecks authorization and dispatches the approved write. After an uncertain response, a background worker reads the ledger and confirms success only when the receipt matches.
+
+[Authorization, approval, and recovery diagrams](docs/architecture.md#refund-approval) · [Threat model](docs/threat-model.md)
+
+## Operations console
+
+The following screenshots come from running Compose sandboxes and show synthetic fixtures or actual recorded evaluation results.
+
+![ToolMesh AutoCrawler showing a completed IT Operations crawl and three discovered drafts](docs/screenshots/m3-crawler.png)
+
+[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png)
+
+## Benchmarks
+
+The M4 held-out run used **10,000 synthetic definitions and 1,000 labeled cases**, with seed 42. Benchmark definitions live outside the executable registry.
+
+| Strategy | Recall@5 | MRR | SQL p95 |
+|---|---:|---:|---:|
+| Keyword | 71.2% | 0.586 | 69.25 ms |
+| Vector | 81.7% | 0.731 | 203.17 ms |
+| Hybrid | 89.5% | 0.738 | 231.01 ms |
+
+Hybrid had the highest recall and fell short of the 95% target. All three strategies returned candidates for all 400 negative cases. Ranked results alone cannot establish whether a suitable tool exists. These timings cover local PostgreSQL query round trips. Agent latency, provider token counts, and task success are outside this experiment.
+
+[Methodology, environment, and reproduction commands](docs/discovery-evaluation.md) · [Raw case export](benchmarks/results/m4-seed42-10000x1000.json.gz)
+
+## Development and testing
+
+Use Python 3.12, uv, Node.js 22, npm, and Docker Compose. Provision the pinned model for semantic retrieval tests. Integration and browser runs modify sandbox fixtures, so use a disposable Compose project with a fresh database volume. Stop any stack occupying the default ports first. Use a new project name for subsequent fresh runs.
 
 ```sh
 uv sync --locked --python 3.12
 uv run --locked ruff check .
 uv run --locked ruff format --check .
 uv run --locked mypy gateway control_plane shared services benchmarks
-docker compose run --rm migrate
+HF_HUB_DISABLE_XET=1 uv run --locked python -m gateway.embeddings --output .models/discovery
 
 npm --prefix apps/web ci
 npm --prefix apps/web run build
 (cd apps/web && npx playwright install chromium)
-npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
+
+docker compose -p toolmesh-doccheck up --build -d --wait
+docker compose -p toolmesh-doccheck run --rm migrate
+TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
 npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
 npm --prefix apps/web run test:e2e -- evaluations.spec.ts
-TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
+TOOLMESH_TEST_API=http://127.0.0.1:8000 TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-doccheck uv run --locked pytest -q
+docker compose -p toolmesh-doccheck down
 ```
 
-Omit `TOOLMESH_TEST_API` to run just the standalone Python checks. The integration and browser suites publish sandbox contracts and write test records. Use a disposable Compose project for a clean demonstration, and set `TOOLMESH_EXPECT_DRAFT=1` to require browser publication from an unpublished draft. Override `TOOLMESH_TEST_WEB` for a different console port. On a disposable sandbox, stop Redis with `docker compose stop redis`. A new readiness check should report HTTP 503 with Redis unavailable, while liveness stays HTTP 200. Run `docker compose up -d --wait redis api` to restore service.
+For standalone Python checks, run `uv run --locked pytest -q` without setting `TOOLMESH_TEST_API`. Set `TOOLMESH_TEST_WEB` and `TOOLMESH_TEST_API` when choosing alternate host ports. The [CI workflow](.github/workflows/ci.yml) records the expected verification steps, including the secret scan. [Milestone documentation checklist](docs/contributing.md#milestone-definition-of-done)
 
-For an independent working-tree secret scan:
+## Repository layout
 
-```sh
-docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.0 dir /repo --redact --no-banner --config /repo/.gitleaks.toml
-```
+| Path | Responsibility |
+|---|---|
+| [`gateway/`](gateway/) | Authenticated REST and MCP entry points, invocation, approval reconciliation, scoped discovery, and scripted workflow |
+| [`control_plane/`](control_plane/) | Catalog registration, release lifecycle, crawler jobs, and source translators |
+| [`services/`](services/) | Payments, Support, Communication, Inventory, and IT Operations adapters and domain logic |
+| [`shared/`](shared/) | Business tool contracts, SQL helpers, Protobuf descriptors, and generated gRPC stubs |
+| [`db/migrations/`](db/migrations/) | Alembic schema changes, domain roles, fixtures, and permissions |
+| [`apps/web/`](apps/web/) | Operations console and browser acceptance tests |
+| [`benchmarks/`](benchmarks/) | Synthetic retrieval dataset, evaluation worker, CLI, and raw exports |
+| [`tests/`](tests/) | Python unit and real-service integration checks |
+| [`infra/`](infra/) | Container images and PostgreSQL initialization |
 
-## M4 discovery and evaluations
+## Roadmap
 
-Keyword discovery uses PostgreSQL full-text search and works on a clean sandbox. To enable vector and hybrid search and benchmark runs, explicitly download the pinned CPU model into the read-only model mount, then restart the API.
+| Milestone | State | Scope |
+|---|---|---|
+| M0–M2 | Implemented | Compose foundation, authenticated runtime, Payments and Support, human refund approval, reconciliation, and simulated communication |
+| M3 | Implemented | Allowlisted AutoCrawler, contract lifecycle, Inventory fixture, and three IT gRPC operations |
+| M4 | Implemented | PostgreSQL keyword, vector, and hybrid retrieval and measured synthetic evaluations |
+| M5 | Planned | HR and Analytics, broader tool coverage and agent profiles, and governance controls |
+| M6 | Planned | Operational telemetry, recovery tooling, load testing, and console hardening |
+| M7 | Planned | Release validation and end-to-end evaluation, including provider measurements where configured |
 
-```sh
-uv sync --locked --python 3.12
-HF_HUB_DISABLE_XET=1 uv run --locked python -m gateway.embeddings --output .models/discovery
-docker compose up --build -d --wait
-docker compose restart api
-```
+No implementation milestone is in progress at this checkpoint. [Changelog](CHANGELOG.md) · [Product specification](docs/ToolMesh_AI_SRS.md)
 
-In **Playground**, submit a query with **Keyword**, **Vector**, or **Hybrid** selected. Results contain only eligible published tools and show retrieval ranks. An empty query browses eligible tools. A semantic query reports an explicit error when the model is missing or the relevant active index is incomplete.
+## Limitations
 
-Sign in as the platform administrator and open **Evaluations**. Choose a catalog size, case count and split, start the job, inspect the comparison and failed examples, and export JSON or CSV. The catalog consists of generated, non-executable benchmark definitions. The measured full-catalog baseline reports serialized schema bytes. Model-provider token counts and LLM workflow comparisons are tracked separately.
-
-```sh
-uv run --locked python -m benchmarks.run --definitions 10000 --cases 1000 --split test --output /tmp/toolmesh-m4-retrieval.json.gz
-```
-
-[Measured results and methodology](docs/discovery-evaluation.md) · [Evaluation screenshot](docs/screenshots/m4-evaluations.png)
-
-## M3 walkthrough
-
-1. Sign in as `platform-admin`. In **Services**, register **Inventory** or **IT Operations** by choosing its configured target. Use **Test connection** to check the live service.
-2. Open **AutoCrawler**, select the service and run a crawl. Jobs and discovered changes survive reload. Payments and Inventory supply OpenAPI, Support and Communication expose native MCP metadata, and IT uses the checked-in Protobuf descriptor after a live gRPC probe.
-3. Open a draft from the crawl results. Review its schema and publish it with a reason. The Registry shows versions, schema diffs, and release history. Compatible prior releases can be rolled back after publication.
-4. Sign in as `it-agent` with `TOOLMESH_IT_PASSWORD`. In **Playground**, invoke `it.check_service_health` with `{"customer_id":"C-102","service_id":"sandbox-api"}`, or invoke `inventory.get_inventory` with `{"customer_id":"C-102","item_id":"SKU-102"}` after its catalog release. To verify the gRPC write path, create an incident against `sandbox-api` and retrieve it through `it.list_incidents`.
-
-The allowlist accepts configured target IDs. The API resolves their addresses, validates the local network ranges, pins the selected address for the crawler connection and refuses redirects. Direct URL registration and uncontrolled paths are unavailable. Services show the last check and a stale label after five minutes. The M3 inventory fixture is an extensibility demonstration. Its sandbox stock is stored in PostgreSQL.
-
-The integration suite reproduces a breaking schema change by adding a required inventory location on a disposable database. The crawl immediately quarantines the old release. Its replacement remains a draft until explicit publication. The test verifies that the new contract requires `location`, then restores the original fixture behavior. Inspect a job in [AutoCrawler](http://127.0.0.1:5173/crawler).
-
-## M2 walkthrough
-
-1. Sign in to **Registry** as `platform-admin` and publish version 1 of `payments.check_duplicate_payment`, `payments.get_transaction`, `support.create_ticket`, `payments.issue_refund`, `communication.send_notification`, and `support.resolve_ticket`. Add a review reason for each draft.
-2. Sign in as `support-agent`. Open **Playground → Open scripted duplicate-payment workflow** and investigate `O-102`. The gateway records the duplicate check and opens a ticket containing evidence for `TX-102-A` and `TX-102-B`. The installment control case `O-103` completes without a ticket.
-3. Sign in separately as `finance-agent` using `TOOLMESH_FINANCE_PASSWORD`. Open the saved run, choose `TX-102-B`, and request a refund. The approval binds that capture, its full amount of 4,550 minor units in USD, the customer and the published version.
-4. Sign in as `refund-approver` using `TOOLMESH_APPROVER_PASSWORD`. Open the pending request in **Approvals**, review the bound intent and record a decision. The execution ID also identifies the refund ledger entry.
-5. Return to the saved run as `support-agent`. After the refund status reaches `SUCCEEDED`, select **Notify customer and resolve ticket**. The service writes one local notification row per refund and resolves the ticket after confirming both the ledger and the notification. **Overview**, **Approvals**, **Audit**, and **Executions** read the recorded outcomes.
-
-The test suites publish tools and consume fixture refund balances. Use identified local sandbox credentials from `.env` and a separate Compose project for a clean walkthrough.
-
-## Single-tool walkthrough
-
-1. Open **Registry** and sign in as `platform-admin` using `TOOLMESH_ADMIN_PASSWORD` from the local environment. Review and publish `payments.check_duplicate_payment` and `support.create_ticket` with a reason. Services reports the resulting published counts.
-2. Sign out, then sign in as `support-agent` with `TOOLMESH_SUPPORT_PASSWORD`. In **Playground**, select `payments.check_duplicate_payment` and invoke it with `{"customer_id":"C-102","order_id":"O-102"}`. The actual result identifies `TX-102-A` and `TX-102-B`. `O-103` is the legitimate installments control case.
-3. Invoke `support.create_ticket` with `{"customer_id":"C-102","order_id":"O-102","subject":"Duplicate capture investigation"}`. Open **Execution trace** from the result. Once published, `support.search_tickets` and `support.get_ticket` can read the persisted ticket.
-4. To exercise restricted discovery, sign in as `payments-agent` with `TOOLMESH_PAYMENTS_PASSWORD`. Support tools and other principals’ traces are outside this agent’s scope. A direct invocation requesting another customer returns a persisted denial.
-
-The MCP Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp/`. Obtain a one-hour bearer token from `POST /api/v1/auth/login` with `username` and `password`. The native client in `tests/test_gateway_slice.py` demonstrates initialization, listing the four meta-tools, discovery, schema retrieval and invocation with that bearer token.
-
-### Current scope
-
-The sandbox implements five services and up to fourteen gateway business operations, including the supplemental Support `get_ticket` and the inventory fixture. The IT slice covers health, incident creation and incident listing. The guided flow is a persisted, deterministic state machine. It uses real gateway calls, with separate signed-in principals for each handoff. Model-driven LangGraph runs and broader agent profiles come in later milestones. Approved refunds with an uncertain outcome are reconciled by reading the Payments ledger. If the ledger has no matching entry, the execution stays `UNKNOWN` for review.
-
-### Reproduce a timeout after commit
-
-Use a disposable Compose project. This test-only switch delays the Payments HTTP response after its ledger commit. The gateway reaches its deadline, reports `UNKNOWN`, and later reconciles the exact confirmed ledger entry.
-
-```sh
-TOOLMESH_TEST_REFUND_DELAY=1 API_PORT=18002 WEB_PORT=15175 docker compose -p toolmesh-m2-fault up --build -d --wait
-TOOLMESH_TEST_REFUND_DELAY=1 TOOLMESH_TEST_API=http://127.0.0.1:18002 uv run --locked pytest -q tests/test_refund_workflow.py -k duplicate_refund
-API_PORT=18002 WEB_PORT=15175 docker compose -p toolmesh-m2-fault down
-```
-
-For the full fresh-sandbox browser sequence, run `TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts`, then `npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts`. The opt-in `TOOLMESH_TEST_MUTATE_POLICY=1` pytest flag exercises expiry and grant revocation using the disposable project's database. Set `TOOLMESH_TEST_COMPOSE_PROJECT` if using a project name other than `toolmesh`.
-
-The screenshots show real sandbox data and decisions.
-
-[Crawler run](docs/screenshots/m3-crawler.png) · [Completed workflow](docs/screenshots/m2-workflow.png) · [Approval](docs/screenshots/m2-approval.png) · [Registry](docs/screenshots/m1-registry.png) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Changelog](CHANGELOG.md)
+- The supported deployment is a single local Compose sandbox. Production SSO, TLS, multi-tenant isolation, and high availability are planned.
+- The local catalog implements up to fourteen business operations across five services, including the Inventory fixture. Publication state determines which operations are discoverable. HR and Analytics appear in synthetic benchmarks only.
+- Crawler targets are configured local services. Arbitrary external registration and gRPC reflection are outside the current scope.
+- The refund workflow is a persisted script. Model-driven LangGraph execution is planned. Payments and notifications are simulated.
+- If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Ordinary writes have no automated reconciliation or write replay.
+- Vector ranking uses exact distance over the eligible set. M4 measures sequential retrieval on synthetic data and leaves production throughput and semantic abstention unverified.
