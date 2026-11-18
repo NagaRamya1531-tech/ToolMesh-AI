@@ -9,6 +9,7 @@ from fastmcp.server.dependencies import get_access_token
 from pydantic import BaseModel, Field, StringConstraints
 
 from control_plane.catalog import Catalog
+from control_plane.crawler import Crawler
 from gateway.identity import Identity, Principal
 from gateway.runtime import Runtime
 from gateway.workflow import DuplicateWorkflow
@@ -48,6 +49,16 @@ class Publication(BaseModel):
     ]
 
 
+class ServiceEdit(BaseModel):
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)
+    ]
+
+
+class Registration(ServiceEdit):
+    target: Key
+
+
 class Decision(BaseModel):
     reason: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)
@@ -79,6 +90,9 @@ class ServiceRecord(BaseModel):
     protocol: str
     owner: str
     published_tools: int
+    health: str
+    checked_at: datetime | None
+    health_error: str | None
 
 
 class ToolSummary(BaseModel):
@@ -98,6 +112,7 @@ class ToolSchema(BaseModel):
 
 class RegistryEntry(ToolSchema):
     active_version: int | None
+    lifecycle: str
 
 
 class PublicationResult(BaseModel):
@@ -138,7 +153,9 @@ def public_tools(values: list[dict]) -> list[dict]:
     ]
 
 
-def build_api(identity: Identity, runtime: Runtime, catalog: Catalog) -> APIRouter:
+def build_api(
+    identity: Identity, runtime: Runtime, catalog: Catalog, crawler: Crawler
+) -> APIRouter:
     router = APIRouter(prefix="/api/v1")
     workflow = DuplicateWorkflow(runtime)
 
@@ -296,6 +313,73 @@ def build_api(identity: Identity, runtime: Runtime, catalog: Catalog) -> APIRout
     @router.post("/workflows/{run_id}/complete")
     async def complete(run_id: UUID, principal: Principal = Depends(caller)):
         return await workflow.complete(principal, run_id)
+
+    @router.get("/service-targets")
+    async def targets(principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return [
+            {"id": key, "protocol": target.protocol, "endpoint": target.location(key)}
+            for key, target in crawler.targets.items()
+        ]
+
+    @router.post("/services", status_code=201)
+    async def register(body: Registration, principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await crawler.register(principal.id, body.target, body.name)
+
+    @router.patch("/services/{service_id}")
+    async def edit_service(
+        service_id: Key, body: ServiceEdit, principal: Principal = Depends(caller)
+    ):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await crawler.rename(service_id, body.name)
+
+    @router.post("/services/{service_id}/test-connection")
+    async def test_connection(service_id: Key, principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await crawler.test_connection(service_id)
+
+    @router.get("/crawl-jobs")
+    async def crawl_jobs(principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await crawler.jobs()
+
+    @router.get("/crawl-jobs/{job_id}")
+    async def crawl_job(job_id: UUID, principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        values = await crawler.jobs(job_id)
+        if not values:
+            raise HTTPException(404, "CRAWL_NOT_AVAILABLE")
+        return values[0]
+
+    @router.post("/services/{service_id}/crawl", status_code=202)
+    async def start_crawl(service_id: Key, principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await crawler.enqueue(service_id, principal.id)
+
+    @router.get("/tools/{tool_id}/versions")
+    async def tool_versions(tool_id: Key, principal: Principal = Depends(caller)):
+        if not principal.can_publish:
+            raise HTTPException(403, "FORBIDDEN")
+        return await catalog.versions(tool_id)
+
+    @router.post("/tools/{tool_id}/{action}")
+    async def release(
+        tool_id: Key,
+        action: Literal["review", "disable", "archive", "rollback"],
+        body: Publication,
+        principal: Principal = Depends(caller),
+    ):
+        return await catalog.release(
+            principal, tool_id, action, body.reason, body.version
+        )
 
     return router
 

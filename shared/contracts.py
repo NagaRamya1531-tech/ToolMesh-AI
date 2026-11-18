@@ -159,3 +159,49 @@ def tool_contract(tool_id: str) -> dict:
         if write
         else "read",
     }
+
+
+class ITHealth(Customer):
+    service_id: Identifier
+
+
+class ITService(Contract):
+    service_id: Identifier
+    status: str
+
+
+class OpenIncident(ITHealth):
+    title: Subject
+
+
+class Incident(ITService):
+    id: str
+    title: Subject
+
+
+class Incidents(Contract):
+    incidents: list[Incident]
+
+
+TOOLS.update(
+    {
+        "it.check_service_health": (
+            "Read a sandbox service health record.",
+            ITHealth,
+            ITService,
+            False,
+        ),
+        "it.list_incidents": (
+            "List recent persisted sandbox incidents.",
+            Customer,
+            Incidents,
+            False,
+        ),
+        "it.create_incident": (
+            "Open a simulated incident for a customer service.",
+            OpenIncident,
+            Incident,
+            True,
+        ),
+    }
+)

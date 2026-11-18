@@ -1,13 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
+import { ServiceActions, ServiceRegistration } from "./crawler";
+import { Screen, State } from "./screen";
+export { Screen, State } from "./screen";
 
 export type Session = { token: string; id: string; kind: "human" | "agent" };
-type Service = { id: string; name: string; protocol: string; owner: string; published_tools: number };
+type Service = { id: string; name: string; protocol: string; owner: string; published_tools: number; health: string; checked_at: string|null; health_error: string|null };
 type Tool = { id: string; service_id: string; version: number; description: string; risk: string };
 type Contract = { description: string; input_schema: object; output_schema: object; risk: string };
-type Definition = { id: string; service_id: string; version: number; active_version: number | null; contract: Contract };
+type Definition = { id: string; service_id: string; version: number; active_version: number | null; lifecycle: string; contract: Contract };
 type Run = { id: string; status: string; error_code: string | null; result: unknown; approval_id?: string | null };
 type Execution = Omit<Run, "result"> & {
   principal: string; tool_id: string | null; version: number | null;
@@ -16,21 +19,6 @@ type Execution = Omit<Run, "result"> & {
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : "The request failed.";
-}
-
-export function Screen({ name, description, children }: { name: string; description: string; children: ReactNode }) {
-  return <main id="main" tabIndex={-1}>
-    <p className="breadcrumb">Workspace / {name}</p><h1>{name}</h1>
-    <p className="description">{description}</p>{children}
-  </main>;
-}
-
-export function State({ loading, error, retry, children }: {
-  loading: boolean; error: Error | null; retry: () => unknown; children: ReactNode;
-}) {
-  if (loading) return <p role="status">Loading…</p>;
-  if (error) return <div className="inline-controls"><p role="alert">{error.message}</p><button onClick={retry}>Retry</button></div>;
-  return children;
 }
 
 export function SignIn({ onSession }: { onSession: (session: Session) => void }) {
@@ -60,7 +48,7 @@ export function SignIn({ onSession }: { onSession: (session: Session) => void })
         <option value="support-agent">Support agent</option>
         <option value="payments-agent">Payments agent</option>
         <option value="finance-agent">Finance agent</option>
-        <option value="refund-approver">Refund approver</option>
+        <option value="refund-approver">Refund approver</option><option value="it-agent">IT agent</option>
       </select></label>
       <label>Password<input name="password" type="password" autoComplete="current-password" maxLength={256} required /></label>
       {error && <p role="alert" className="warning">{error}</p>}
@@ -79,28 +67,46 @@ export function Services({ session }: { session: Session }) {
   const values = query.data?.filter((service) => !protocol || service.protocol === protocol) ?? [];
   return <Screen name="Services" description="Inspect registered sandbox services and their published tool counts.">
     <label className="filter">Protocol <select value={protocol} onChange={(event) => setParams(event.target.value ? { protocol: event.target.value } : {})}>
-      <option value="">All protocols</option><option>REST</option><option>MCP</option>
+      <option value="">All protocols</option><option>REST</option><option>MCP</option><option>gRPC</option>
     </select></label>
+    {session.id==="platform-admin" && query.data && <ServiceRegistration session={session} registered={query.data.map((option)=>option.id)} />}
     <State loading={query.isPending} error={query.error} retry={query.refetch}>
       {values.length === 0 ? <p>No services match this filter.</p> : <div className="panel table-wrap"><table>
-        <thead><tr><th scope="col">Service</th><th scope="col">Protocol</th><th scope="col">Published tools</th></tr></thead>
+        <thead><tr><th scope="col">Service</th><th scope="col">Protocol</th><th scope="col">Published tools</th><th scope="col">Health</th></tr></thead>
         <tbody>{values.map((service) => <tr key={service.id}>
           <th scope="row"><Link to={`?protocol=${protocol}&service=${service.id}`}>{service.name}</Link></th>
-          <td>{service.protocol}</td><td>{service.published_tools}</td>
+          <td>{service.protocol}</td><td>{service.published_tools}</td><td>{service.health}{service.checked_at && Date.now()-Date.parse(service.checked_at)>300000 ? " · stale" : ""}</td>
         </tr>)}</tbody>
       </table></div>}
       {values.filter((service) => service.id === selected).map((service) => <section className="panel detail" key={service.id}>
-        <h2>{service.name}</h2><p>Owner <code>{service.owner}</code></p>
+        <h2>{service.name}</h2><p>Owner <code>{service.owner}</code></p><p>Endpoint <code>{service.id}:{service.protocol==="gRPC" ? 50051 : 8000}</code></p>
         <Link to={`/tools?service=${service.id}`}>View tools</Link>
+        {service.checked_at && <p>Last checked {new Date(service.checked_at).toLocaleString()} {service.health_error ?? ""}</p>}
+        {session.id==="platform-admin" && <ServiceActions key={service.id} session={session} service={service.id} name={service.name}/>}
       </section>)}
     </State>
   </Screen>;
+}
+
+function schemaChanges(before: object, after: object) {
+  const old=before as {properties?:Record<string, unknown>;required?:string[]};
+  const next=after as {properties?:Record<string, unknown>;required?:string[]};
+  const previous=old.properties ?? {};
+  const current=next.properties ?? {};
+  return {
+    added:Object.keys(current).filter((key)=>!(key in previous)),
+    removed:Object.keys(previous).filter((key)=>!(key in current)),
+    changed:Object.keys(current).filter((key)=>key in previous&&JSON.stringify(current[key])!==JSON.stringify(previous[key])),
+    required_added:(next.required??[]).filter((key)=>!(old.required??[]).includes(key)),
+    required_removed:(old.required??[]).filter((key)=>!(next.required??[]).includes(key)),
+  };
 }
 
 export function Registry({ session }: { session: Session }) {
   const [params, setParams] = useSearchParams();
   const service = params.get("service") ?? "";
   const selected = params.get("tool");
+  const version = params.get("version");
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -111,26 +117,38 @@ export function Registry({ session }: { session: Session }) {
     queryKey: ["registry", session.id],
     queryFn: () => call<(Tool | Definition)[]>("/tools", session.token),
   });
-  const values = query.data?.filter((tool) => !service || tool.service_id === service) ?? [];
-  const tool = values.find((item) => item.id === selected);
+  const matching = query.data?.filter((tool) => !service || tool.service_id === service) ?? [];
+  const values = matching.filter((entry,index)=>matching.findIndex((value)=>value.id===entry.id)===index);
+  const choices = matching.filter((item)=>item.id===selected);
+  const tool = choices.find((item)=>String(item.version)===version) ?? choices[0];
+  const history = useQuery({
+    queryKey:["release-history",selected,session.id],
+    queryFn:()=>call<{history:{action:string;actor:string;version:number;reason:string;created_at:string}[]}>(`/tools/${encodeURIComponent(selected!)}/versions`,session.token),
+    enabled:admin&&!!selected,
+  });
   const detail = useQuery({
     queryKey: ["schema", session.id, selected],
     queryFn: () => call<Definition>(`/discovery/tools/${encodeURIComponent(selected!)}/schema`, session.token),
     enabled: !!tool && !("contract" in tool),
   });
   const contract = tool && "contract" in tool ? tool.contract : detail.data?.contract;
-  async function publish(event: FormEvent, definition: Definition) {
+  const previous = choices.find((item)=>tool && item.version===tool.version-1);
+  const diff = previous && "contract" in previous && contract ? {
+    input:schemaChanges(previous.contract.input_schema,contract.input_schema),
+    output:schemaChanges(previous.contract.output_schema,contract.output_schema),
+  } : null;
+  async function publish(event: FormEvent, definition: Definition, action = "publish") {
     event.preventDefault();
     setPending(true);
     setError("");
     setNotice("");
     try {
-      await call(`/tools/${encodeURIComponent(definition.id)}/publish`, session.token, {
+      await call(`/tools/${encodeURIComponent(definition.id)}/${action}`, session.token, {
         version: definition.version, reason,
       });
-      await Promise.all(["registry", "services", "discovery"].map((key) => client.invalidateQueries({ queryKey: [key] })));
+      await Promise.all(["registry", "services", "discovery", "release-history"].map((key) => client.invalidateQueries({ queryKey: [key] })));
       setReason("");
-      setNotice(`Published ${definition.id} v${definition.version}.`);
+      setNotice(action==="publish" ? `Published ${definition.id} v${definition.version}.` : `Recorded ${action} for ${definition.id} v${definition.version}.`);
     } catch (failure) {
       setError(message(failure));
     } finally {
@@ -139,29 +157,52 @@ export function Registry({ session }: { session: Session }) {
   }
   return <Screen name="Registry" description={admin ? "Review immutable drafts and publish approved tool contracts." : "Inspect published tool contracts within your assigned scope."}>
     <label className="filter">Service <select value={service} onChange={(event) => setParams(event.target.value ? { service: event.target.value } : {})}>
-      <option value="">All services</option><option value="payments">Payments</option><option value="support">Support</option><option value="communication">Communication</option>
+      <option value="">All services</option><option value="payments">Payments</option><option value="support">Support</option><option value="communication">Communication</option><option value="inventory">Inventory</option><option value="it">IT Operations</option>
     </select></label>
     {notice && <p role="status" className="ok">{notice}</p>}
     <State loading={query.isPending} error={query.error} retry={query.refetch}>
       {values.length === 0 ? <p>No tools match this filter.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Tool</th><th scope="col">Version</th><th scope="col">Status</th></tr></thead>
         <tbody>{values.map((value) => <tr key={value.id}><th scope="row"><Link to={`?service=${service}&tool=${value.id}`} onClick={() => {setNotice(""); setError(""); setReason("");}}>{value.id}</Link></th>
-          <td>v{value.version}</td><td>{"active_version" in value && value.active_version === null ? "Draft" : "Published"}</td></tr>)}</tbody>
+          <td>v{value.version}</td><td>{"lifecycle" in value
+            ? value.lifecycle !== "published"
+              ? value.lifecycle[0].toUpperCase() + value.lifecycle.slice(1)
+              : value.active_version === value.version ? "Published" : `Draft · active v${value.active_version}`
+            : "Published"}</td></tr>)}</tbody>
       </table></div>}
     </State>
     {tool && <section className="panel detail" aria-label="Tool contract">
       <h2>{tool.id}</h2>
-      {"contract" in tool && tool.active_version === null &&
-        <form className="form-panel compact" onSubmit={(event) => void publish(event, tool)}>
+      {choices.length>1 && <label className="filter">Contract version <select value={tool.version} onChange={(event)=>setParams({service,tool:tool.id,version:event.target.value})}>
+        {choices.map((entry)=><option key={entry.version} value={entry.version}>v{entry.version}</option>)}
+      </select></label>}
+      {"contract" in tool && tool.lifecycle!=="archived" &&
+        <form className="form-panel compact" onSubmit={(event) => {
+          const action=event.nativeEvent instanceof SubmitEvent ? (event.nativeEvent.submitter as HTMLButtonElement|null)?.value : undefined;
+          void publish(event,tool,action || "publish");
+        }}>
           <label>Publication reason<input value={reason} maxLength={240} required onChange={(event) => setReason(event.target.value)} /></label>
           {error && <p role="alert" className="warning">{error}</p>}
-          <button disabled={pending || !reason.trim()}>{pending ? "Publishing…" : "Publish version"}</button>
+          <div className="inline-controls">
+            {tool.active_version!==tool.version && <button value="publish" disabled={pending || !reason.trim()}>Publish version</button>}
+            {tool.active_version===null && <button value="review" disabled={pending || !reason.trim()}>Mark reviewed</button>}
+            {tool.active_version!==null && <button value="disable" disabled={pending || !reason.trim()}>Disable tool</button>}
+            {tool.active_version!==null && tool.version<tool.active_version && <button value="rollback" disabled={pending || !reason.trim()}>Roll back</button>}
+            <button value="archive" disabled={pending || !reason.trim()}>Archive tool</button>
+          </div>
         </form>}
       <State loading={!contract && detail.isPending} error={detail.error} retry={detail.refetch}>
         {contract && <><p>{contract.description} <span className="environment">{contract.risk}</span></p>
           <h3>Input schema</h3><pre>{JSON.stringify(contract.input_schema, null, 2)}</pre>
           <h3>Output schema</h3><pre>{JSON.stringify(contract.output_schema, null, 2)}</pre></>}
       </State>
+      {diff && <details><summary>Schema diff from v{previous?.version}</summary><pre>{JSON.stringify(diff,null,2)}</pre></details>}
+      {history.data && history.data.history.length>0 && <details>
+        <summary>Release history</summary>
+        <ul>{history.data.history.map((event,index)=><li key={`${event.created_at}-${index}`}>
+          {event.action} v{event.version} · {event.actor} · {event.reason}
+        </li>)}</ul>
+      </details>}
     </section>}
   </Screen>;
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## M3 · AutoCrawler, release lifecycle and gRPC IT
+
+- Added allowlisted service registration, editable display names, live connection checks and persisted health observations.
+- Added durable crawl jobs for OpenAPI, native MCP and checked-in Protobuf descriptors. The console shows job history, unsupported operations, drafts and schema diffs.
+- Added version review, publication, disable, archive and compatible rollback. Breaking or missing source contracts quarantine the active release and create release-history evidence.
+- Added the Inventory OpenAPI fixture and three persisted IT operations over gRPC. Public-host registration and gRPC reflection remain outside this milestone.
+
+### Verification
+
+- Upgraded the existing sandbox and started a fresh acceptance stack. Alembic revision `0005` and a repeat migration succeeded.
+- Eleven Python checks and seven Chromium checks passed. Coverage includes allowlist rejection, OpenAPI, native MCP and Protobuf discovery across five targets, browser registration and publication, gRPC health and persisted incident operations, compatible rollback and breaking inventory schema quarantine.
+- The inventory test added a required location, observed a denied invocation before replacement publication, then verified the new contract against a persisted stock record. The fixture was restored at the end of the test.
+- Reproduced the checked-in Protobuf artifacts with the locked compiler. Local lint, formatting, type checks and the frontend build passed.
+
 ## M2 · Approval-gated duplicate-payment workflow
 
 - Added a durable guided workflow with structured duplicate evidence, separate Support and Finance handoffs, human approval and persisted completion.

@@ -42,7 +42,7 @@ npm --prefix apps/web ci
 npm --prefix apps/web run build
 (cd apps/web && npx playwright install chromium)
 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
-npm --prefix apps/web run test:e2e -- refund.spec.ts
+npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
 ```
 
@@ -53,6 +53,17 @@ For an independent working-tree secret scan:
 ```sh
 docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.0 dir /repo --redact --no-banner --config /repo/.gitleaks.toml
 ```
+
+## M3 walkthrough
+
+1. Sign in as `platform-admin`. In **Services**, register **Inventory** or **IT Operations** by choosing its configured target. Use **Test connection** to check the live service.
+2. Open **AutoCrawler**, select the service and run a crawl. Jobs and discovered changes survive reload. Payments and Inventory supply OpenAPI, Support and Communication expose native MCP metadata, and IT uses the checked-in Protobuf descriptor after a live gRPC probe.
+3. Open a draft from the crawl results. Review its schema and publish it with a reason. The Registry shows versions, schema diffs, and release history. Compatible prior releases can be rolled back after publication.
+4. Sign in as `it-agent` with `TOOLMESH_IT_PASSWORD`. In **Playground**, invoke `it.check_service_health` with `{"customer_id":"C-102","service_id":"sandbox-api"}`, or invoke `inventory.get_inventory` with `{"customer_id":"C-102","item_id":"SKU-102"}` after its catalog release. To verify the gRPC write path, create an incident against `sandbox-api` and retrieve it through `it.list_incidents`.
+
+The allowlist accepts configured target IDs. The API resolves their addresses, validates the local network ranges, pins the selected address for the crawler connection and refuses redirects. Direct URL registration and uncontrolled paths are unavailable. Services show the last check and a stale label after five minutes. The M3 inventory fixture is an extensibility demonstration. Its sandbox stock is stored in PostgreSQL.
+
+The integration suite reproduces a breaking schema change by adding a required inventory location on a disposable database. The crawl immediately quarantines the old release. Its replacement remains a draft until explicit publication. The test verifies that the new contract requires `location`, then restores the original fixture behavior. Inspect a job in [AutoCrawler](http://127.0.0.1:5173/crawler).
 
 ## M2 walkthrough
 
@@ -75,7 +86,7 @@ The MCP Streamable HTTP endpoint is `http://127.0.0.1:8000/mcp/`. Obtain a one-h
 
 ### Current scope
 
-The sandbox implements three services and ten gateway business operations, including the supplemental Support `get_ticket`. The guided flow is a persisted, deterministic state machine. It uses real gateway calls, with separate signed-in principals for each handoff. Model-driven LangGraph runs and broader agent profiles come in later milestones. Approved refunds with an uncertain outcome are reconciled by reading the Payments ledger. If the ledger has no matching entry, the execution stays `UNKNOWN` for review.
+The sandbox implements five services and up to fourteen gateway business operations, including the supplemental Support `get_ticket` and the inventory fixture. The IT slice covers health, incident creation and incident listing. The guided flow is a persisted, deterministic state machine. It uses real gateway calls, with separate signed-in principals for each handoff. Model-driven LangGraph runs and broader agent profiles come in later milestones. Approved refunds with an uncertain outcome are reconciled by reading the Payments ledger. If the ledger has no matching entry, the execution stays `UNKNOWN` for review.
 
 ### Reproduce a timeout after commit
 
@@ -87,8 +98,8 @@ TOOLMESH_TEST_REFUND_DELAY=1 TOOLMESH_TEST_API=http://127.0.0.1:18002 uv run --l
 API_PORT=18002 WEB_PORT=15175 docker compose -p toolmesh-m2-fault down
 ```
 
-For the full fresh-sandbox browser sequence, run `TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts`, then `npm --prefix apps/web run test:e2e -- refund.spec.ts`. The opt-in `TOOLMESH_TEST_MUTATE_POLICY=1` pytest flag exercises expiry and grant revocation using the disposable project's database. Set `TOOLMESH_TEST_COMPOSE_PROJECT` if using a project name other than `toolmesh`.
+For the full fresh-sandbox browser sequence, run `TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts`, then `npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts`. The opt-in `TOOLMESH_TEST_MUTATE_POLICY=1` pytest flag exercises expiry and grant revocation using the disposable project's database. Set `TOOLMESH_TEST_COMPOSE_PROJECT` if using a project name other than `toolmesh`.
 
 The screenshots show real sandbox data and decisions.
 
-[Completed workflow](docs/screenshots/m2-workflow.png) · [Approval](docs/screenshots/m2-approval.png) · [Registry](docs/screenshots/m1-registry.png) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Changelog](CHANGELOG.md)
+[Crawler run](docs/screenshots/m3-crawler.png) · [Completed workflow](docs/screenshots/m2-workflow.png) · [Approval](docs/screenshots/m2-approval.png) · [Registry](docs/screenshots/m1-registry.png) · [Architecture](docs/architecture.md) · [Threat model](docs/threat-model.md) · [Changelog](CHANGELOG.md)

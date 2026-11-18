@@ -32,7 +32,7 @@ jobs:
           docker compose up --build -d --wait
           docker compose run --rm migrate
       - run: TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
-      - run: npm --prefix apps/web run test:e2e -- refund.spec.ts
+      - run: npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
       - run: TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
       - name: Scan working tree for secrets
         run: |

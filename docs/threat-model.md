@@ -12,3 +12,7 @@ The local gateway binds to loopback and the console proxies readiness and the au
 | Write uncertainty | Ticket creation is an ordinary sandbox write. It records a durable execution before dispatch and has no automatic retry. A transport failure can leave the ticket effect uncertain. Refunds bind the exact intent and use a distinct approver, a transactional ledger key, and ledger-only reconciliation. Communication stores a local simulated record and Support checks the linked refund and notification before resolution. |
 
 The sandbox is intended for local use. External exposure requires a separate deployment design with authentication, TLS, managed credentials and a review of the network boundary.
+
+### Crawler boundary
+
+Crawler requests are limited to configured target IDs, protocols and ports. Name resolution is IPv4-only in the local sandbox and must yield RFC 1918 addresses. The crawler connects to a validated IP and sends the configured authority to the local service. HTTP clients refuse redirects and environment proxies. External OpenAPI references, unconfigured routes and unsupported inventory schema features cannot activate an adapter. The local Docker administrator controls DNS and networking. Arbitrary external registrations, TLS discovery and gRPC reflection are outside M3.

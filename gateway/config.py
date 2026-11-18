@@ -18,3 +18,7 @@ class Settings(BaseSettings):
     communication_secret: SecretStr | None = None
     finance_password: SecretStr | None = None
     approver_password: SecretStr | None = None
+
+    it_password: SecretStr | None = None
+    it_secret: SecretStr | None = None
+    inventory_secret: SecretStr | None = None

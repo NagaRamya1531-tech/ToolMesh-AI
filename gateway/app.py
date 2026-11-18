@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.exceptions import HTTPException
 
 from control_plane.catalog import Catalog
+from control_plane.crawler import Crawler
+from control_plane.sources import Target
 from gateway.config import Settings
 from gateway.identity import Identity
 from gateway.interfaces import build_api, build_mcp
@@ -67,16 +69,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "payments-agent": config.payments_password,
             "finance-agent": config.finance_password,
             "refund-approver": config.approver_password,
+            "it-agent": config.it_password,
         },
     )
+
+    def secret(value):
+        return value.get_secret_value() if value else ""
+
     runtime = Runtime(
         engine,
         redis,
-        config.payments_secret.get_secret_value() if config.payments_secret else "",
-        config.support_secret.get_secret_value() if config.support_secret else "",
-        config.communication_secret.get_secret_value()
-        if config.communication_secret
-        else "",
+        secret(config.payments_secret),
+        secret(config.support_secret),
+        secret(config.communication_secret),
+        secret(config.inventory_secret),
+        secret(config.it_secret),
+    )
+    crawler = Crawler(
+        engine,
+        {
+            "payments": Target("REST", 8000, secret(config.payments_secret)),
+            "support": Target("MCP", 8000, secret(config.support_secret)),
+            "communication": Target("MCP", 8000, secret(config.communication_secret)),
+            "inventory": Target("REST", 8000, secret(config.inventory_secret)),
+            "it": Target("gRPC", 50051, secret(config.it_secret)),
+        },
     )
     mcp = build_mcp(identity, runtime, ["localhost:*", "127.0.0.1:*", "api:*"])
 
@@ -87,7 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) = ARRAY['0004']::varchar[]"
+                    "FROM alembic_version) = ARRAY['0005']::varchar[]"
                 )
             )
             return all(result.one())
@@ -106,12 +123,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         try:
             async with mcp.lifespan(mcp):
-                worker = asyncio.create_task(runtime.approvals.worker())
+                workers = [
+                    asyncio.create_task(runtime.approvals.worker()),
+                    asyncio.create_task(crawler.worker()),
+                ]
                 try:
                     yield
                 finally:
-                    worker.cancel()
-                    await asyncio.gather(worker, return_exceptions=True)
+                    for worker in workers:
+                        worker.cancel()
+                    await asyncio.gather(*workers, return_exceptions=True)
         finally:
             await redis.aclose()
             await engine.dispose()
@@ -181,6 +202,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             checks={"postgres": postgres, "redis": redis_status},
         )
 
-    app.include_router(build_api(identity, runtime, Catalog(engine)))
+    app.include_router(build_api(identity, runtime, Catalog(engine), crawler))
     app.mount("/mcp", mcp)
     return app

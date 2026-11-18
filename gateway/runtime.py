@@ -7,12 +7,15 @@ from fastapi import HTTPException
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from control_plane.sources import resolve
 from gateway.approvals import Approvals, event
+from gateway.grpc_adapter import call_it
 from gateway.identity import Principal
 from shared.contracts import TOOLS, tool_contract
 from shared.database import execute, rows
@@ -32,12 +35,16 @@ class Runtime:
         payments_secret: str,
         support_secret: str,
         communication_secret: str = "",
+        inventory_secret: str = "",
+        it_secret: str = "",
     ):
         self.db = db
         self.redis = redis
         self.payments_secret = payments_secret
         self.support_secret = support_secret
         self.communication_secret = communication_secret
+        self.inventory_secret = inventory_secret
+        self.it_secret = it_secret
         self.approvals = Approvals(db, self.downstream)
 
     async def tools(
@@ -144,7 +151,21 @@ class Runtime:
     ) -> dict:
         service, operation = tool_id.split(".", 1)
         async with asyncio.timeout(5):
-            if service == "payments":
+            if service == "it":
+                return await call_it(
+                    await resolve("it", 50051), self.it_secret, operation, args
+                )
+            if service in {"payments", "inventory"}:
+                address = (
+                    await resolve(service, 8000)
+                    if service == "inventory"
+                    else "payments"
+                )
+                secret = (
+                    self.payments_secret
+                    if service == "payments"
+                    else self.inventory_secret
+                )
                 if operation == "issue_refund" and refund_id is None:
                     raise HTTPException(403, "APPROVAL_REQUIRED")
                 extra = {"X-Refund-ID": str(refund_id)} if refund_id is not None else {}
@@ -153,13 +174,13 @@ class Runtime:
                     trust_env=False,
                     timeout=3,
                     headers={
-                        "Authorization": f"Bearer {self.payments_secret}",
+                        "Authorization": f"Bearer {secret}",
                         "Accept-Encoding": "identity",
                         **extra,
                     },
                 ) as client:
                     async with client.stream(
-                        "POST", f"http://payments:8000/{operation}", json=args
+                        "POST", f"http://{address}:8000/{operation}", json=args
                     ) as response:
                         if response.status_code == 404:
                             raise HTTPException(404, "RECORD_NOT_AVAILABLE")
@@ -229,17 +250,29 @@ class Runtime:
             )
         try:
             selected = await self.schema(principal, tool_id, version)
-            _, input_model, output_model, write = TOOLS[tool_id]
-            if fields and not set(fields).issubset(output_model.model_fields):
+            definition = selected["contract"]
+            dynamic = tool_id == "inventory.get_inventory"
+            input_model = output_model = None
+            if dynamic:
+                if not Draft202012Validator(definition["input_schema"]).is_valid(
+                    arguments
+                ):
+                    raise HTTPException(422, "INVALID_ARGUMENT")
+                args = arguments
+                permitted = set(definition["output_schema"]["properties"])
+            else:
+                _, input_model, output_model, write = TOOLS[tool_id]
+                if definition != tool_contract(tool_id):
+                    raise HTTPException(409, "VERSION_INCOMPATIBLE")
+                permitted = set(output_model.model_fields)
+                try:
+                    args = input_model.model_validate_json(
+                        json.dumps(arguments)
+                    ).model_dump(mode="json")
+                except (ValidationError, ValueError, RecursionError):
+                    raise HTTPException(422, "INVALID_ARGUMENT") from None
+            if fields and not set(fields).issubset(permitted):
                 raise HTTPException(422, "INVALID_ARGUMENT")
-            if selected["contract"] != tool_contract(tool_id):
-                raise HTTPException(409, "VERSION_INCOMPATIBLE")
-            try:
-                args = input_model.model_validate_json(
-                    json.dumps(arguments)
-                ).model_dump(mode="json")
-            except (ValidationError, ValueError, RecursionError):
-                raise HTTPException(422, "INVALID_ARGUMENT") from None
             if args["customer_id"] != principal.customer:
                 raise HTTPException(404, "TOOL_NOT_AVAILABLE")
             await self.quota(principal, tool_id)
@@ -269,9 +302,16 @@ class Runtime:
                 )
             status = "RUNNING"
             payload = await self.downstream(tool_id, args)
-            result = output_model.model_validate_json(json.dumps(payload)).model_dump(
-                mode="json"
-            )
+            if output_model is None:
+                if not Draft202012Validator(definition["output_schema"]).is_valid(
+                    payload
+                ):
+                    raise HTTPException(502, "UPSTREAM_SCHEMA_MISMATCH")
+                result = payload
+            else:
+                result = output_model.model_validate_json(
+                    json.dumps(payload)
+                ).model_dump(mode="json")
             if fields:
                 result = {field: result[field] for field in fields}
             status = "SUCCEEDED"

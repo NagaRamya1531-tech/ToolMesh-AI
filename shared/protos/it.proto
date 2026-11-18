@@ -1,0 +1,15 @@
+syntax = "proto3";
+package toolmesh.it;
+
+service Operations {
+  rpc CheckServiceHealth (HealthRequest) returns (ServiceHealth);
+  rpc ListIncidents (CustomerRequest) returns (IncidentList);
+  rpc CreateIncident (IncidentRequest) returns (Incident);
+}
+
+message CustomerRequest { string customer_id = 1; }
+message HealthRequest { string customer_id = 1; string service_id = 2; }
+message ServiceHealth { string service_id = 1; string status = 2; }
+message IncidentRequest { string customer_id = 1; string service_id = 2; string title = 3; }
+message Incident { string id = 1; string service_id = 2; string title = 3; string status = 4; }
+message IncidentList { repeated Incident incidents = 1; }

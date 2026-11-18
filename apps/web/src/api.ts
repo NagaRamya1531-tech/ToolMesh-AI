@@ -25,9 +25,9 @@ export async function getReadiness(signal: AbortSignal): Promise<Readiness> {
   return data;
 }
 
-export async function call<T>(path: string, token?: string, body?: object): Promise<T> {
+export async function call<T>(path: string, token?: string, body?: object, method?: "PATCH"): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),

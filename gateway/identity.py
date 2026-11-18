@@ -33,7 +33,7 @@ PRINCIPALS = {
     "platform-admin": Principal(
         "platform-admin",
         "human",
-        frozenset({"payments", "support", "communication"}),
+        frozenset({"payments", "support", "communication", "inventory", "it"}),
         "C-102",
     ),
     "support-agent": Principal(
@@ -48,6 +48,9 @@ PRINCIPALS = {
     ),
     "refund-approver": Principal(
         "refund-approver", "human", frozenset(), "C-102", can_approve=True
+    ),
+    "it-agent": Principal(
+        "it-agent", "agent", frozenset({"it", "inventory"}), "C-102", True
     ),
     "payments-agent": Principal(
         "payments-agent", "agent", frozenset({"payments"}), "C-102"

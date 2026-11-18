@@ -33,6 +33,8 @@ services:
       TOOLMESH_PAYMENTS_DB_PASSWORD: ${TOOLMESH_PAYMENTS_DB_PASSWORD:?Set TOOLMESH_PAYMENTS_DB_PASSWORD in .env}
       TOOLMESH_SUPPORT_DB_PASSWORD: ${TOOLMESH_SUPPORT_DB_PASSWORD:?Set TOOLMESH_SUPPORT_DB_PASSWORD in .env}
       TOOLMESH_COMMUNICATION_DB_PASSWORD: ${TOOLMESH_COMMUNICATION_DB_PASSWORD:?Set TOOLMESH_COMMUNICATION_DB_PASSWORD in .env}
+      TOOLMESH_INVENTORY_DB_PASSWORD: ${TOOLMESH_INVENTORY_DB_PASSWORD:?Set TOOLMESH_INVENTORY_DB_PASSWORD in .env}
+      TOOLMESH_IT_DB_PASSWORD: ${TOOLMESH_IT_DB_PASSWORD:?Set TOOLMESH_IT_DB_PASSWORD in .env}
       TOOLMESH_MIGRATION_URL: postgresql+asyncpg://toolmesh_migrator:${POSTGRES_PASSWORD}@postgres/toolmesh
     depends_on:
       postgres:
@@ -43,6 +45,9 @@ services:
       dockerfile: infra/api.Dockerfile
     environment:
       TOOLMESH_DATABASE_URL: postgresql+asyncpg://toolmesh_app:${TOOLMESH_APP_PASSWORD}@postgres/toolmesh
+      TOOLMESH_INVENTORY_SECRET: ${TOOLMESH_INVENTORY_SECRET:?Set TOOLMESH_INVENTORY_SECRET in .env}
+      TOOLMESH_IT_SECRET: ${TOOLMESH_IT_SECRET:?Set TOOLMESH_IT_SECRET in .env}
+      TOOLMESH_IT_PASSWORD: ${TOOLMESH_IT_PASSWORD:?Set TOOLMESH_IT_PASSWORD in .env}
       TOOLMESH_REDIS_URL: redis://redis:6379/0
       TOOLMESH_COMMUNICATION_SECRET: ${TOOLMESH_COMMUNICATION_SECRET:?Set TOOLMESH_COMMUNICATION_SECRET in .env}
       TOOLMESH_FINANCE_PASSWORD: ${TOOLMESH_FINANCE_PASSWORD:?Set TOOLMESH_FINANCE_PASSWORD in .env}
@@ -116,6 +121,38 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+  inventory:
+    build:
+      context: .
+      dockerfile: infra/api.Dockerfile
+    command: ["uvicorn", "services.inventory:create_app", "--factory", "--host", "0.0.0.0"]
+    environment:
+      TOOLMESH_DOMAIN_DATABASE_URL: postgresql+asyncpg://toolmesh_inventory:${TOOLMESH_INVENTORY_DB_PASSWORD}@postgres/toolmesh
+      TOOLMESH_INTERNAL_SECRET: ${TOOLMESH_INVENTORY_SECRET}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+  it:
+    build:
+      context: .
+      dockerfile: infra/api.Dockerfile
+    command: ["python", "-m", "services.it"]
+    environment:
+      TOOLMESH_DOMAIN_DATABASE_URL: postgresql+asyncpg://toolmesh_it:${TOOLMESH_IT_DB_PASSWORD}@postgres/toolmesh
+      TOOLMESH_INTERNAL_SECRET: ${TOOLMESH_IT_SECRET}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 50051), timeout=2).close()"]
       interval: 5s
       timeout: 4s
       retries: 10

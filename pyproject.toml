@@ -7,7 +7,10 @@ dependencies = [
   "asyncpg>=0.30,<1",
   "fastapi>=0.115,<1",
   "fastmcp>=3,<4",
+  "grpcio>=1.70,<2",
   "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "protobuf>=6.33,<8",
   "pydantic-settings>=2,<3",
   "redis>=6,<9",
   "sqlalchemy[asyncio]>=2,<3",
@@ -15,7 +18,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["httpx2", "pytest", "ruff", "mypy"]
+dev = [
+    "httpx2",
+    "pytest",
+    "ruff",
+    "mypy",
+    "grpcio-tools>=1.70,<2",
+    "types-protobuf>=7.35.1.20260906",
+    "types-grpcio>=1.85.0.20261028",
+    "types-jsonschema>=4.26.0.20261006",
+]
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
@@ -26,3 +38,14 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff.lint.per-file-ignores]
+"shared/protos/*_pb2*.py" = ["F401", "I001"]
+"shared/protos/*_pb2*.pyi" = ["I001"]
+
+[tool.ruff.format]
+exclude = ["shared/protos/*_pb2*"]
+
+[[tool.mypy.overrides]]
+module = "shared.protos.it_pb2_grpc"
+ignore_errors = true

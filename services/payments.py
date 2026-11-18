@@ -41,6 +41,12 @@ def create_app() -> FastAPI:
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+    @app.get(
+        "/openapi.json", dependencies=[Depends(authenticate)], include_in_schema=False
+    )
+    async def openapi():
+        return app.openapi()
+
     @app.get("/healthz")
     async def health():
         async with db.connect() as conn:
