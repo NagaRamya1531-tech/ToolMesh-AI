@@ -1,0 +1,297 @@
+{
+  "payments.issue_refund": {
+    "description": "Request a sandbox refund with human approval.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "transaction_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Transaction Id",
+          "type": "string"
+        },
+        "amount_minor": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Amount Minor",
+          "type": "integer"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "transaction_id",
+        "amount_minor",
+        "currency"
+      ],
+      "title": "RefundIntent",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "transaction_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Transaction Id",
+          "type": "string"
+        },
+        "amount_minor": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Amount Minor",
+          "type": "integer"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "transaction_id",
+        "amount_minor",
+        "currency",
+        "id",
+        "status"
+      ],
+      "title": "Refund",
+      "type": "object"
+    },
+    "risk": "approval"
+  },
+  "payments.get_refund_status": {
+    "description": "Read a confirmed refund from the sandbox ledger.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "refund_id": {
+          "format": "uuid",
+          "title": "Refund Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "refund_id"
+      ],
+      "title": "RefundLookup",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "transaction_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Transaction Id",
+          "type": "string"
+        },
+        "amount_minor": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Amount Minor",
+          "type": "integer"
+        },
+        "currency": {
+          "pattern": "^[A-Z]{3}$",
+          "title": "Currency",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "transaction_id",
+        "amount_minor",
+        "currency",
+        "id",
+        "status"
+      ],
+      "title": "Refund",
+      "type": "object"
+    },
+    "risk": "read"
+  },
+  "support.resolve_ticket": {
+    "description": "Resolve a ticket after confirmed refund and notification.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "format": "uuid",
+          "title": "Ticket Id",
+          "type": "string"
+        },
+        "refund_id": {
+          "format": "uuid",
+          "title": "Refund Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "ticket_id",
+        "refund_id"
+      ],
+      "title": "TicketResolution",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "format": "uuid",
+          "title": "Ticket Id",
+          "type": "string"
+        },
+        "refund_id": {
+          "format": "uuid",
+          "title": "Refund Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "ticket_id",
+        "refund_id",
+        "status"
+      ],
+      "title": "ResolvedTicket",
+      "type": "object"
+    },
+    "risk": "write"
+  },
+  "communication.send_notification": {
+    "description": "Record a local notification for a confirmed refund.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "refund_id": {
+          "format": "uuid",
+          "title": "Refund Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "refund_id"
+      ],
+      "title": "RefundLookup",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "refund_id": {
+          "format": "uuid",
+          "title": "Refund Id",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "refund_id",
+        "id",
+        "status"
+      ],
+      "title": "Notification",
+      "type": "object"
+    },
+    "risk": "write"
+  }
+}

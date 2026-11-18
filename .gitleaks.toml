@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignored local environment and generated dependencies"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)(\.git|\.venv|node_modules|dist|test-results|playwright-report)/''',
+]

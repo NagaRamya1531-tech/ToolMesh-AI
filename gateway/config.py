@@ -1,0 +1,20 @@
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="TOOLMESH_")
+
+    database_url: SecretStr
+    redis_url: SecretStr
+    probe_timeout: float = Field(default=2, gt=0, le=10)
+
+    payments_secret: SecretStr | None = None
+    support_secret: SecretStr | None = None
+    admin_password: SecretStr | None = None
+    support_password: SecretStr | None = None
+    payments_password: SecretStr | None = None
+
+    communication_secret: SecretStr | None = None
+    finance_password: SecretStr | None = None
+    approver_password: SecretStr | None = None

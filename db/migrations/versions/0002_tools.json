@@ -1,0 +1,477 @@
+{
+  "payments.get_transaction": {
+    "description": "Retrieve a captured transaction.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "transaction_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Transaction Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "transaction_id"
+      ],
+      "title": "TransactionLookup",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "order_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "amount_minor": {
+          "title": "Amount Minor",
+          "type": "integer"
+        },
+        "currency": {
+          "title": "Currency",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "installment": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Installment"
+        }
+      },
+      "required": [
+        "id",
+        "order_id",
+        "customer_id",
+        "amount_minor",
+        "currency",
+        "status",
+        "installment"
+      ],
+      "title": "Transaction",
+      "type": "object"
+    },
+    "risk": "read"
+  },
+  "payments.list_transactions": {
+    "description": "List up to 50 customer captures.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id"
+      ],
+      "title": "Customer",
+      "type": "object"
+    },
+    "output_schema": {
+      "$defs": {
+        "Transaction": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "title": "Id",
+              "type": "string"
+            },
+            "order_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "title": "Order Id",
+              "type": "string"
+            },
+            "customer_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "title": "Customer Id",
+              "type": "string"
+            },
+            "amount_minor": {
+              "title": "Amount Minor",
+              "type": "integer"
+            },
+            "currency": {
+              "title": "Currency",
+              "type": "string"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "installment": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Installment"
+            }
+          },
+          "required": [
+            "id",
+            "order_id",
+            "customer_id",
+            "amount_minor",
+            "currency",
+            "status",
+            "installment"
+          ],
+          "title": "Transaction",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "transactions": {
+          "items": {
+            "$ref": "#/$defs/Transaction"
+          },
+          "title": "Transactions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "transactions"
+      ],
+      "title": "Transactions",
+      "type": "object"
+    },
+    "risk": "read"
+  },
+  "payments.check_duplicate_payment": {
+    "description": "Find matching non-installment captures for an order.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "order_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Order Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "order_id"
+      ],
+      "title": "OrderLookup",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicate_capture_detected": {
+          "title": "Duplicate Capture Detected",
+          "type": "boolean"
+        },
+        "groups": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Groups",
+          "type": "array"
+        }
+      },
+      "required": [
+        "duplicate_capture_detected",
+        "groups"
+      ],
+      "title": "DuplicateEvidence",
+      "type": "object"
+    },
+    "risk": "read"
+  },
+  "support.create_ticket": {
+    "description": "Create a ticket for a customer and order.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "order_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "subject": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "order_id",
+        "subject"
+      ],
+      "title": "CreateTicket",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "order_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "subject": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Subject",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "order_id",
+        "subject",
+        "id",
+        "status"
+      ],
+      "title": "Ticket",
+      "type": "object"
+    },
+    "risk": "write"
+  },
+  "support.get_ticket": {
+    "description": "Retrieve a customer ticket.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "ticket_id": {
+          "format": "uuid",
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "ticket_id"
+      ],
+      "title": "TicketLookup",
+      "type": "object"
+    },
+    "output_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        },
+        "order_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "subject": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Subject",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "order_id",
+        "subject",
+        "id",
+        "status"
+      ],
+      "title": "Ticket",
+      "type": "object"
+    },
+    "risk": "read"
+  },
+  "support.search_tickets": {
+    "description": "List up to 50 recent customer tickets.",
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9-]+$",
+          "title": "Customer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id"
+      ],
+      "title": "Customer",
+      "type": "object"
+    },
+    "output_schema": {
+      "$defs": {
+        "Ticket": {
+          "additionalProperties": false,
+          "properties": {
+            "customer_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "title": "Customer Id",
+              "type": "string"
+            },
+            "order_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9-]+$",
+              "title": "Order Id",
+              "type": "string"
+            },
+            "subject": {
+              "maxLength": 160,
+              "minLength": 1,
+              "title": "Subject",
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "customer_id",
+            "order_id",
+            "subject",
+            "id",
+            "status"
+          ],
+          "title": "Ticket",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "tickets": {
+          "items": {
+            "$ref": "#/$defs/Ticket"
+          },
+          "title": "Tickets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tickets"
+      ],
+      "title": "Tickets",
+      "type": "object"
+    },
+    "risk": "read"
+  }
+}
