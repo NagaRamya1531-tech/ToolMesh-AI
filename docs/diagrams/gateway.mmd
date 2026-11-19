@@ -1,0 +1,18 @@
+flowchart LR
+    Console["React console"] --> Control["Control plane"]
+    Console --> Runtime["Data plane"]
+    Client["MCP clients"] --> Runtime
+    Control --> Store[("PostgreSQL · pgvector")]
+    Runtime --> Store
+    Runtime --> Quota[("Redis quotas")]
+    Runtime --> Domains["REST · MCP · gRPC"]
+    Runtime -.-> Provider["OpenAI · optional"]
+    Domains --> State[("Isolated service schemas")]
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Console,Client client
+    class Control,Runtime plane
+    class Store,Quota,State store
+    class Domains,Provider boundary

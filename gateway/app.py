@@ -33,6 +33,7 @@ from gateway.embeddings import Embeddings
 from gateway.identity import Identity
 from gateway.interfaces import build_api, build_mcp
 from gateway.limits import LimitBody
+from gateway.provider import provider_api
 from gateway.recovery import recovery_worker
 from gateway.runtime import Runtime
 from gateway.telemetry import Telemetry, request_id, trace_id
@@ -279,6 +280,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             checks={"postgres": postgres, "redis": redis_status},
         )
 
+    app.include_router(provider_api(identity, runtime, config.openai_api_key))
     app.include_router(build_agent_api(identity, agent_runs))
     app.include_router(build_governance(identity, runtime))
     app.include_router(build_evaluation_api(identity, evaluations))

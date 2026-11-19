@@ -263,6 +263,8 @@ class Runtime:
         version: int | None = None,
         fields: list[str] | None = None,
         idempotency_key: str | None = None,
+        *,
+        read_only: bool = False,
     ):
         trace = uuid4()
         started = time.monotonic()
@@ -288,6 +290,8 @@ class Runtime:
                 selected = await self.schema(principal, tool_id, version)
             with self.telemetry.span("execution.validate"):
                 definition = selected["contract"]
+                if read_only and definition["risk"] != "read":
+                    raise HTTPException(403, "READ_ONLY_REQUIRED")
                 dynamic = tool_id == "inventory.get_inventory"
                 input_model = output_model = None
                 if dynamic:
@@ -308,6 +312,8 @@ class Runtime:
                         ).model_dump(mode="json")
                     except (ValidationError, ValueError, RecursionError):
                         raise HTTPException(422, "INVALID_ARGUMENT") from None
+                if read_only and write:
+                    raise HTTPException(403, "READ_ONLY_REQUIRED")
                 if fields and not set(fields).issubset(permitted):
                     raise HTTPException(422, "INVALID_ARGUMENT")
                 if not object_allowed(principal, args):

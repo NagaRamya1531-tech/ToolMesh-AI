@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
 import { ServiceActions, ServiceRegistration } from "./crawler";
+import { ProviderPlayground } from "./provider-playground";
 import { Screen, State } from "./screen";
 export { Screen, State } from "./screen";
 
@@ -213,6 +214,25 @@ export function Registry({ session }: { session: Session }) {
 }
 
 export function Playground({ session }: { session: Session }) {
+  const [mode, setMode] = useState<"manual" | "provider">("manual");
+  return <Screen name="Playground" description="Discover and run sandbox tools through the gateway.">
+    <div className="playground-navigation">
+      <div className="playground-modes" role="group" aria-label="Playground mode">
+        <button aria-pressed={mode === "manual"} onClick={() => setMode("manual")}>Manual tools</button>
+        <button aria-pressed={mode === "provider"} onClick={() => setMode("provider")}>OpenAI provider</button>
+      </div>
+      <div className="playground-links">
+        <Link to="/playground/duplicate-payment">Open scripted duplicate-payment workflow</Link>
+        <Link to="/playground/scenarios">Open agent scenarios</Link>
+      </div>
+    </div>
+    {mode === "provider"
+      ? <ProviderPlayground key={session.id} token={session.token} principal={session.id} />
+      : <ManualPlayground session={session} />}
+  </Screen>;
+}
+
+function ManualPlayground({ session }: { session: Session }) {
   const [selected, setSelected] = useState("");
   const [discovery, setDiscovery] = useState({query:"",strategy:"keyword"});
   const [draft,setDraft] = useState({query:"",strategy:"keyword"});
@@ -254,9 +274,7 @@ export function Playground({ session }: { session: Session }) {
       setError(message(failure));
     } finally { setPending(false); }
   }
-  return <Screen name="Playground" description="Run one published sandbox tool using the signed-in identity.">
-    <p><Link to="/playground/duplicate-payment">Open scripted duplicate-payment workflow</Link></p>
-    <p><Link to="/playground/scenarios">Open agent scenarios</Link></p>
+  return <>
     <form className="panel form-panel" onSubmit={(event)=>{
       event.preventDefault();setSelected("");setRun(null);setError("");setDiscovery(draft);
     }}>
@@ -286,7 +304,7 @@ export function Playground({ session }: { session: Session }) {
       {run.approval_id && <p><Link to={`/approvals?approval=${run.approval_id}`}>Open refund approval</Link></p>}
       {run.result !== null && <pre>{JSON.stringify(run.result, null, 2)}</pre>}
     </section>}
-  </Screen>;
+  </>;
 }
 
 export function Executions({ session }: { session: Session }) {

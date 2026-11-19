@@ -26,6 +26,14 @@ flowchart LR
     Index --> Discovery[("PostgreSQL search terms and pgvector")]
     Eval --> Compare["Evaluation worker"]
     Compare --> Scratch[("Isolated benchmark corpus and case results")]
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Admin client
+    class API,Crawl,Index,Compare plane
+    class Jobs,Catalog,Eval,Policy,Discovery,Scratch store
+    class Target boundary
 ```
 
 ## Data plane
@@ -44,6 +52,14 @@ flowchart LR
     REST --> State[("Isolated domain schemas")]
     MCP --> State
     GRPC --> State
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Caller client
+    class Auth,Runtime plane
+    class Catalog,Quota,State store
+    class REST,MCP,GRPC boundary
 ```
 
 ### Agent discovery
@@ -279,6 +295,14 @@ flowchart LR
     Stale["Stale ordinary execution"] --> Risk{"Dispatched write or unknown risk"}
     Risk -->|Yes| Manual["Record UNKNOWN for operator review"]
     Risk -->|No| Failed
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Write,Stale client
+    class Check,Result,Match,Risk plane
+    class Success store
+    class Unknown,Manual,Failed boundary
 ```
 
 The reconciler does not replay writes. Expired or rejected approvals and revoked grants block dispatch. Quota unavailability blocks writes. Interrupted crawl jobs can be reclaimed after their lease expires. Interrupted evaluation runs rebuild deterministic inputs from their stored configuration. [Operational procedures](runbook.md#diagnose-startup-and-dependency-failures)
@@ -306,6 +330,14 @@ flowchart LR
         Gateway -->|Export spans| Collector["Optional OTLP collector"]
         Backend --> Store
     end
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Browser,Client client
+    class Web,Gateway,Migration plane
+    class Store,Cache store
+    class Backend,Scraper,Collector boundary
 ```
 
 The gateway joins the Compose network and publishes its HTTP port on loopback. PostgreSQL, Redis, and domain services have no host port bindings. The optional embedding files mount read-only. The [runbook](runbook.md) covers bootstrap and faults.
@@ -368,3 +400,26 @@ sequenceDiagram
 ```
 
 [Release methodology and evidence](release-validation.md)
+
+
+## OpenAI Playground
+
+```mermaid
+sequenceDiagram
+    participant C as Operations console
+    participant G as Gateway runtime
+    participant P as OpenAI Responses API
+    participant D as Domain service
+    C->>G: Submit a synthetic task and catalog search
+    G->>G: Authenticate, scope candidates, enforce quota
+    G->>P: Send task and bounded read schemas
+    P-->>G: Return one candidate and arguments or abstain
+    opt Candidate is visible and arguments are valid
+        G->>G: Recheck session scope, active version and read-only policy
+        G->>D: Dispatch through the existing adapter
+        D-->>G: Return the scoped result
+    end
+    G-->>C: Return safe status, usage and execution reference
+```
+
+OpenAI selection is an opt-in gateway route. A fixed model, request deadline, shortlist size, and output token limit bound each call. The gateway sends no authorization header from its caller and keeps domain results outside the provider request. Estimates use configured list rates.

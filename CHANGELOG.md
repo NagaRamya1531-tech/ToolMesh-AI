@@ -1,5 +1,14 @@
 # Changelog
 
+## M8 · OpenAI Playground and architecture refresh
+
+- Added the opt-in OpenAI Playground for one scoped sandbox read per task. The console shows the tool result, execution trace, provider-reported tokens and estimated cost.
+- Bound provider input, candidates, request deadline and output tokens. Reuse gateway quota, session, scope, version, schema and execution checks. Keep the server credential outside the console.
+- Refreshed the console palette, README, and architecture diagrams. Added a standalone SVG, an ADR, and live desktop and mobile screenshots.
+- Four profile cases and all 16 corrected benchmark trials passed with GPT-5.4 mini. The first live browser scan found a keyboard issue in scrollable results. The fixed panel passed its rerun. Estimated list-rate cost across all 21 validation requests was $0.0090. [Method and raw evidence](docs/release-validation.md#m8-corrected-provider-validation)
+
+- Twenty-five Python tests, twelve standard Chromium tests and one live OpenAI Chromium test passed. Verified lint, formatting, types, frontend production build, local Mermaid rendering, documentation links and secret scanning.
+
 ## M7 · Sandbox release v0.1.0
 
 - Added a loopback Ollama evaluation harness comparing upfront schemas, keyword, vector and hybrid discovery. The runner verifies selected fixture reads through the live gateway and records provider-reported usage.

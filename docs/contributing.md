@@ -14,6 +14,6 @@ Start from the [README setup and test commands](../README.md#development-and-tes
 
 ## Diagram conventions
 
-Use native GitHub Mermaid fences with the default theme. Put requests left to right in flowcharts. Use rectangles for actors, applications, and operations, cylinders for datastores, and diamonds only for decisions. Name trust boundaries in plain language and preserve the same component names across views.
+Use native GitHub Mermaid fences. Architecture flowcharts use indigo clients, cyan gateway planes, green state and amber integrations. Use identical labels in the standalone SVG and its Mermaid source. Put requests left to right in flowcharts. Use rectangles for actors, applications, and operations, cylinders for datastores, and diamonds only for decisions. Name trust boundaries in plain language and preserve the same component names across views.
 
 Use active directional labels and regular Mermaid syntax for flows, sequence diagrams, and ERDs. Keep diagrams readable without color. Avoid external images, custom HTML, renderer directives, and layout extensions. Preview diagrams on GitHub using its native Markdown renderer. [GitHub diagram documentation](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)

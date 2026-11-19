@@ -1,0 +1,81 @@
+[
+  {
+    "role": "finance",
+    "verified": true,
+    "response": {
+      "model": "gpt-5.4-mini-2026-03-17",
+      "usage": {
+        "input_tokens": 805,
+        "output_tokens": 48,
+        "total_tokens": 853,
+        "estimated_usd": 0.00081975
+      },
+      "candidate_count": 4,
+      "status": "SUCCEEDED",
+      "tool": "analytics.get_sales_metrics",
+      "execution": {
+        "id": "4b2a3d74-c468-489c-9af0-e41fbf3a9abd",
+        "status": "SUCCEEDED",
+        "error_code": null,
+        "retry_after_seconds": null,
+        "result": {
+          "count": 2,
+          "total_minor": 9100,
+          "currency": "USD"
+        }
+      }
+    }
+  },
+  {
+    "role": "it",
+    "verified": true,
+    "response": {
+      "model": "gpt-5.4-mini-2026-03-17",
+      "usage": {
+        "input_tokens": 265,
+        "output_tokens": 34,
+        "total_tokens": 299,
+        "estimated_usd": 0.00035175
+      },
+      "candidate_count": 1,
+      "status": "SUCCEEDED",
+      "tool": "it.check_service_health",
+      "execution": {
+        "id": "65a16363-ba2e-4494-9cbe-4c6bf1ccdf9f",
+        "status": "SUCCEEDED",
+        "error_code": null,
+        "retry_after_seconds": null,
+        "result": {
+          "service_id": "sandbox-api",
+          "status": "degraded"
+        }
+      }
+    }
+  },
+  {
+    "role": "hr",
+    "verified": true,
+    "response": {
+      "model": "gpt-5.4-mini-2026-03-17",
+      "usage": {
+        "input_tokens": 262,
+        "output_tokens": 29,
+        "total_tokens": 291,
+        "estimated_usd": 0.000327
+      },
+      "candidate_count": 1,
+      "status": "SUCCEEDED",
+      "tool": "hr.get_leave_balance",
+      "execution": {
+        "id": "a8454887-12e5-4204-a841-975200422669",
+        "status": "SUCCEEDED",
+        "error_code": null,
+        "retry_after_seconds": null,
+        "result": {
+          "employee_id": "E-102",
+          "available_days": 15
+        }
+      }
+    }
+  }
+]

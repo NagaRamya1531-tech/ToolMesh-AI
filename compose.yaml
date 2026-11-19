@@ -46,6 +46,7 @@ services:
       context: .
       dockerfile: infra/api.Dockerfile
     environment:
+      TOOLMESH_OPENAI_API_KEY: ${TOOLMESH_OPENAI_API_KEY:-}
       TOOLMESH_OTLP_TRACES_ENDPOINT: ${TOOLMESH_OTLP_TRACES_ENDPOINT:-}
       TOOLMESH_EMBEDDING_PATH: /models/discovery
       TOOLMESH_DATABASE_URL: postgresql+asyncpg://toolmesh_app:${TOOLMESH_APP_PASSWORD}@postgres/toolmesh

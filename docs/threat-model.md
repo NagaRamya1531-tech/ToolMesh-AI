@@ -32,3 +32,7 @@ Execution status events inherit the same caller, administrator, and approver sco
 ## Provider evaluation boundary
 
 The release harness restricts the gateway to loopback and uses disposable credentials with the same scoped catalog and execution APIs as ordinary agents. Ollama runs on loopback. The explicit OpenAI mode sends the benchmark input to the official HTTPS API. Provider input consists of authorized contract metadata and synthetic task descriptions. Fixture arguments and domain results stay within the evaluation client and gateway. The harness dispatches only the expected operation after verifying its published contract is read-only. Exports contain bounded selections, usage counters and execution metadata.
+
+## OpenAI Playground
+
+The operator opts in using a server-only credential. The model receives a bounded task and scoped read schemas over HTTPS. An authenticated quota check precedes the request. The selected operation must match a shortlisted version. The gateway rejects model-supplied customer scope and rechecks the caller session and active contract before a read-only dispatch. API errors return safe gateway codes. Prompt text and provider response bodies are excluded from persisted execution metadata. Use synthetic data with the sandbox.

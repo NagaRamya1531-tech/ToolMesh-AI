@@ -10,3 +10,4 @@
 | [0006 · Domain governance and scripted agents](0006-domain-governance-and-scripted-agents.md) | Apply versioned policy across the six service domains and persist bounded agent execution steps. |
 | [0007 · Bounded retries and execution evidence](0007-bounded-retries-and-execution-evidence.md) | Retry eligible reads within a deadline, preserve uncertain writes, and record transactional execution timelines. |
 | [0008 · Provider evaluation outside the runtime](0008-separate-provider-evaluation.md) | Keep CI deterministic and measure real local inference through a separate sandbox harness. |
+| [0009 · Read-only provider Playground](0009-read-only-provider-playground.md) | Enable bounded model selection while keeping authorization and dispatch inside the gateway. |

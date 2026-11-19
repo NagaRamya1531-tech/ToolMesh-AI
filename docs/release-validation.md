@@ -73,6 +73,19 @@ The pinned `gpt-5.4-mini-2026-03-17` run completed all 16 requests.
 | Vector | 3/4 | 708 | 61 | 749.44 ms |
 | Hybrid | 3/4 | 712 | 73 | 1,014.02 ms |
 
-OpenAI verified all Support, Finance, and HR reads. The expected IT health tool was absent from the visible catalog in both provider runs. OpenAI abstained in all four IT trials. All methods therefore verified every available case in the OpenAI run. The historical IT trials measure behavior with a missing tool. The runner now crawls the IT service if its health contract is missing, publishes the fixture contracts, and checks visibility under all four roles before model requests. A corrected provider run is pending.
+OpenAI verified all Support, Finance, and HR reads. The expected IT health tool was absent from the visible catalog in both provider runs. OpenAI abstained in all four IT trials. All methods therefore verified every available case in the OpenAI run. The historical IT trials measure behavior with a missing tool. The runner now crawls the IT service if its health contract is missing, publishes the fixture contracts, and checks visibility under all four roles before model requests. See the [corrected M8 provider run](#m8-corrected-provider-validation) below.
 
 The provider reported 12,089 input tokens, zero cached input tokens, and 262 output tokens. Estimated inference cost was $0.01025 USD at standard list rates. [Raw OpenAI comparison](../benchmarks/results/m7-openai-comparison.json) · [Model pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini)
+
+## M8 corrected provider validation
+
+M8 used the same four tasks and pinned GPT-5.4 mini snapshot on a disposable Compose project. The harness crawled and published the previously missing IT health tool and verified visibility for every test identity before calling the provider.
+
+| Strategy | Verified reads | Input tokens | Output tokens |
+|---|---:|---:|---:|
+| Upfront schemas | 4/4 | 10,705 | 64 |
+| Keyword | 4/4 | 710 | 64 |
+| Vector | 4/4 | 756 | 64 |
+| Hybrid | 4/4 | 760 | 70 |
+
+The corrected benchmark completed 16 provider requests across four fixed tasks. It reported 12,931 input tokens including 7,168 cached tokens, and 262 output tokens. Estimated list-rate cost was $0.00604 USD. The four provider Playground tasks verified their expected fixture reads across Support, Finance, IT and HR. Support was rerun after an accessibility fix. The 21 requests across both validations cost an estimated $0.0090 USD. These four synthetic cases do not establish production model accuracy. [Corrected benchmark](../benchmarks/results/m8-openai-corrected.json) · [Finance, IT and HR API evidence](../benchmarks/results/m8-playground-api.json) · [Live Support console capture](screenshots/m8-playground.png) · [Model pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini)
