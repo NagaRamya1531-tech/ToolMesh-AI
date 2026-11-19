@@ -1,32 +1,77 @@
 # ToolMesh AI
 
-ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M8**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark. [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0)
+**An MCP gateway for discovering and running internal tools under one access policy.**
+
+ToolMesh connects agents to REST, MCP, and gRPC services through a versioned tool catalog. It runs locally with Docker Compose and includes an operations console, scripted agent workflows, and an optional OpenAI Playground.
 
 [![Verify ToolMesh](https://github.com/NagaRamya1531-tech/ToolMesh-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/NagaRamya1531-tech/ToolMesh-AI/actions/workflows/ci.yml)
 
-**Explore the project** · [Run locally](#quick-start) · [See the architecture](#architecture) · [OpenAI Playground](#openai-playground) · [Measured results](#benchmarks)
-
 ## Contents
 
-- [Problem and approach](#problem-and-approach)
-- [Quick start](#quick-start)
-- [Architecture](#architecture)
-- [Security and approvals](#security-and-approvals)
-- [Operations console](#operations-console)
-- [OpenAI Playground](#openai-playground)
-- [Reliability and operations](#reliability-and-operations)
-- [Benchmarks](#benchmarks)
-- [Release validation](docs/release-validation.md)
-- [Development and testing](#development-and-testing)
-- [Repository layout](#repository-layout)
-- [Roadmap](#roadmap)
-- [Limitations](#limitations)
+[Problem and solution](#problem-and-solution) · [See it work](#see-it-work) · [Architecture](#architecture) · [Quick start](#quick-start) · [Benchmarks](#benchmarks) · [Development](#development-and-testing) · [Repository and roadmap](#repository-and-roadmap)
 
-## Problem and approach
+## Problem and solution
 
-Internal agents need to find the right operation across APIs that use different protocols, schema conventions, and access rules. Loading the full tool catalog into each request consumes context and exposes capabilities the caller may never use. Connecting directly to individual services also distributes the responsibility for authorization, version compatibility, and execution evidence.
+An agent investigating a duplicate payment needs to read payment records and open a support ticket. Issuing the refund requires a separate permission and a human approval. As teams add services, each agent integration has to keep up with different protocols, changing schemas, and rules about which customers and actions it can access. Giving the model every schema adds context without settling those access questions.
 
-ToolMesh publishes reviewed contracts in a versioned registry. An authenticated client discovers eligible operations, fetches a schema on demand, and invokes the selected version through the gateway. The gateway enforces service, operation, and customer scope before dispatch. Sensitive sandbox refunds require a separate human decision and produce a persisted receipt and audit trail.
+ToolMesh puts the catalog and the execution checks behind one gateway.
+
+| Problem | How ToolMesh handles it |
+|---|---|
+| Finding the right tool as the catalog grows | Discovery ranks tools the caller can access. The client fetches the selected tool’s schema on demand. |
+| Service contracts change independently | The crawler stages drafts. The registry preserves immutable versions and exposes the version approved for use. |
+| A model can suggest an action outside its permissions | The gateway checks identity, customer scope, policy, tool version, and arguments before dispatch. Refunds and simulated restarts require a separate approval. |
+| A request times out after a possible write | The execution records an uncertain outcome. For approval-gated writes, reconciliation checks the owning service’s receipt before confirming success. |
+
+## See it work
+
+![ToolMesh console showing the request path, dependency health, and recorded execution outcomes](docs/screenshots/m8-overview-workspace.png)
+
+[Registry inspector](docs/screenshots/m8-registry-inspector.png) · [Mobile agent management](docs/screenshots/m8-agents-mobile.png) · [Evaluation workspace](docs/screenshots/m8-evaluation-workspace.png) · [Live OpenAI Playground](docs/screenshots/m8-playground.png)
+
+The sandbox duplicate-payment workflow runs across Payments, Support, and Communication using synthetic records.
+
+1. **Support** checks order `O-102`, finds the two captures, and opens a ticket with the evidence.
+2. **Finance** requests a refund for one capture. The request binds the transaction, amount, currency, and tool version.
+3. **An authorized reviewer** approves the request. The gateway rechecks policy, dispatches the write, and records its outcome.
+4. **Support** checks the refund receipt, records a simulated notification, and resolves the ticket. The console shows the persisted execution and approval history.
+
+[Run this workflow](docs/runbook.md#run-the-duplicate-payment-workflow) · [Invoke a single tool](docs/runbook.md#invoke-a-single-tool) · [Try the four scripted profiles](docs/runbook.md#run-scripted-agent-scenarios)
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Console["React console"] --> Control["Control plane"]
+    Console --> Runtime["Data plane"]
+    Client["MCP clients"] --> Runtime
+    Control --> Store[("PostgreSQL · pgvector")]
+    Runtime --> Store
+    Runtime --> Quota[("Redis quotas")]
+    Runtime --> Domains["REST · MCP · gRPC"]
+    Runtime -.-> Provider["OpenAI · optional"]
+    Domains --> State[("Isolated service schemas")]
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class Console,Client client
+    class Control,Runtime plane
+    class Store,Quota,State store
+    class Domains,Provider boundary
+```
+
+The **control plane** manages registration, discovery jobs, publication, and policy. The **data plane** serves discovery and execution through REST and MCP. They run in one gateway process and share PostgreSQL for transactional catalog and execution records. Domain services keep separate schemas and database roles.
+
+| Technology | Role |
+|---|---|
+| FastAPI and FastMCP | REST endpoints and native MCP Streamable HTTP share the same execution boundary. |
+| PostgreSQL and pgvector | Store catalog versions, scoped policies, approvals, traces, and searchable embeddings. |
+| Redis | Enforce fixed-window invocation quotas. |
+| React, TypeScript, and Docker Compose | Provide a typed operations console and reproducible local setup. |
+| Prometheus and optional OpenTelemetry export | Expose gateway metrics and correlate requests with execution evidence. |
+
+[Standalone diagram](docs/diagrams/gateway.svg) · [Control plane, data plane, sequences, ERDs, and deployment](docs/architecture.md) · [Architecture decisions](docs/adr/README.md) · [Threat model](docs/threat-model.md) · [Incident procedures](docs/runbook.md#inspect-an-execution-and-its-telemetry)
 
 ## Quick start
 
@@ -57,59 +102,6 @@ docker compose restart api
 
 The weights stay in the ignored local model directory and are mounted read-only. The gateway reports missing model or index state explicitly for semantic searches.
 
-## Architecture
-
-The control plane and data plane run in one gateway process. Their modules have distinct responsibilities and share PostgreSQL where registry and execution changes must be transactional.
-
-> **Diagram key** · Indigo clients · Cyan gateway planes · Green state · Amber integrations
-
-```mermaid
-flowchart LR
-    Console["React console"] --> Control["Control plane"]
-    Console --> Runtime["Data plane"]
-    Client["MCP clients"] --> Runtime
-    Control --> Store[("PostgreSQL · pgvector")]
-    Runtime --> Store
-    Runtime --> Quota[("Redis quotas")]
-    Runtime --> Domains["REST · MCP · gRPC"]
-    Runtime -.-> Provider["OpenAI · optional"]
-    Domains --> State[("Isolated service schemas")]
-    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
-    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
-    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
-    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
-    class Console,Client client
-    class Control,Runtime plane
-    class Store,Quota,State store
-    class Domains,Provider boundary
-```
-
-[Open the standalone architecture SVG](docs/diagrams/gateway.svg) · [Editable Mermaid source](docs/diagrams/gateway.mmd)
-
-| Layer | Responsibility |
-|---|---|
-| Control plane | Allowlisted registration and crawling, immutable draft contracts, review, publication, quarantine, rollback, and evaluation jobs |
-| Data plane | Authenticated discovery and invocation, active-version and scope checks, input validation, quotas, dispatch, and execution records |
-| Domain services | Payments and Inventory over REST, Support and Communication over native MCP, and IT Operations over gRPC |
-
-[Control and data plane diagrams, request sequences, ER diagrams, and deployment](docs/architecture.md) · [Architecture decisions](docs/adr/README.md)
-
-## Security and approvals
-
-The gateway uses expiring opaque sandbox sessions, versioned allow and deny rules, and operation and customer scope checks. Agent credentials are hashed and shown once at creation. Administrators can revoke sessions by disabling an agent. Ranking runs over the authorized active catalog. The crawler accepts configured targets, checks resolved addresses, and pins the connection address. Domain services have separate credentials and PostgreSQL roles.
-
-Finance refund requests and IT restart requests bind exact intent and use idempotency keys. A different actor with the approver grant reviews the bound operation, customer, target, and tool version. Refund intent also includes currency and amount. The gateway records the decision atomically, rechecks authorization and dispatches the approved write. After an uncertain response, a background worker reads the owning service's receipt and confirms success only when it matches.
-
-[Authorization, approval, and recovery diagrams](docs/architecture.md#refund-approval) · [Threat model](docs/threat-model.md)
-
-## Operations console
-
-The following screenshots come from running Compose sandboxes and show synthetic fixtures or actual recorded evaluation results. Sidebar sections carry their own accents into the page headers. Selecting a record opens an inspector beside the list on wide screens and below it on smaller screens.
-
-![ToolMesh operations workspace showing the tool request path, dependency health, and recorded execution outcomes](docs/screenshots/m8-overview-workspace.png)
-
-[Registry inspector](docs/screenshots/m8-registry-inspector.png) · [Mobile agent management](docs/screenshots/m8-agents-mobile.png) · [Evaluation workspace](docs/screenshots/m8-evaluation-workspace.png) · [Mobile overview](docs/screenshots/m8-overview-mobile.png) · [OpenAI Playground](docs/screenshots/m8-playground.png) · [Mobile Playground](docs/screenshots/m8-playground-mobile.png) · [AutoCrawler](docs/screenshots/m3-crawler.png) · [Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
-
 ## OpenAI Playground
 
 Open **Playground → OpenAI provider** to run one published read with the signed-in identity. The console shows the selected tool, result, trace, reported tokens, and estimated cost. Manual tools and the scripted scenarios remain available.
@@ -126,29 +118,16 @@ docker compose up --build -d api web
 
 Use synthetic prompts and provide a catalog search for narrower selection. The gateway sends the prompt and up to eight authorized read schemas to OpenAI. It injects customer scope, revalidates the session, and validates the selected version and arguments before dispatch. Read results and execution evidence stay with the gateway and console. [Provider sequence and boundaries](docs/architecture.md#openai-playground)
 
-## Reliability and operations
-
-PostgreSQL records execution timelines with request and OpenTelemetry trace IDs. The console and CLI show these events to callers who can view the corresponding execution. Gateway telemetry is available on a private Prometheus endpoint and supports optional OTLP HTTP export. Ordinary reads retry recognized transient faults within seven seconds and use a per-service circuit breaker. The gateway dispatches writes once and classifies stale writes as uncertain when it cannot prove their outcome. [CLI and incident procedures](docs/runbook.md#inspect-an-execution-and-its-telemetry)
-
 ## Benchmarks
 
-The M4 held-out run used **10,000 synthetic definitions and 1,000 labeled cases**, with seed 42. Benchmark definitions live outside the executable registry.
+| Experiment | Measured result | Evidence |
+|---|---|---|
+| Retrieval with 10,000 synthetic definitions and 1,000 labeled cases | Recall@5 reached 71.2% for keyword, 81.7% for vector, and 89.5% for hybrid. Hybrid SQL p95 was 231.01 ms. | [Method](docs/discovery-evaluation.md) · [Raw cases](benchmarks/results/m4-seed42-10000x1000.json.gz) |
+| Warm burst of 100 authenticated hybrid searches | 100 HTTP 200 responses with 567.08 ms client p95. | [Release report](docs/release-validation.md) · [Raw samples](benchmarks/results/m7-local-release.json) |
+| GPT-5.4 mini on four sandbox reads across four retrieval strategies | 16 of 16 passed after publishing the missing IT health contract. Estimated inference cost was $0.00604 USD. | [Corrected comparison](docs/release-validation.md#m8-corrected-provider-validation) · [Raw results](benchmarks/results/m8-openai-corrected.json) |
+| Local Payments outage and recovery | 20 healthy reads completed at concurrency four. The fault test recorded six retries before the circuit opened and verified fail-closed Redis quota behavior. | [Method and raw samples](docs/operations-rehearsal.md) |
 
-| Strategy | Recall@5 | MRR | SQL p95 |
-|---|---:|---:|---:|
-| Keyword | 71.2% | 0.586 | 69.25 ms |
-| Vector | 81.7% | 0.731 | 203.17 ms |
-| Hybrid | 89.5% | 0.738 | 231.01 ms |
-
-Hybrid had the highest recall and fell short of the 95% target. All three strategies returned candidates for all 400 negative cases. Ranked results alone cannot establish whether a suitable tool exists. These timings cover local PostgreSQL query round trips. Agent latency, provider token counts, and task success are outside this experiment.
-
-[Methodology, environment, and reproduction commands](docs/discovery-evaluation.md) · [Raw case export](benchmarks/results/m4-seed42-10000x1000.json.gz)
-
-The M6 local operations rehearsal completed 20 Payments reads in batches of four. Client-side median latency was 38.83 ms and nearest-rank p95 was 153.71 ms. The fault run measured six retries before the circuit opened and verified fail-closed Redis quota behavior. [Operations methodology and limitations](docs/operations-rehearsal.md) · [Raw samples](benchmarks/results/m6-local-operations.json)
-
-M7 measured 94.4% hybrid Recall@5 on 1,000 synthetic definitions and 120 labeled cases. Gemma 2B completed two of four read cases with each ranked strategy and zero with upfront schemas. A warm burst of 100 authenticated hybrid searches returned 100 HTTP 200 responses with 567.08 ms client p95. [Release methodology, raw evidence, and limitations](docs/release-validation.md)
-
-M8 verified all four synthetic reads with each strategy after publishing the missing IT health contract. The 16-request OpenAI benchmark cost an estimated $0.00604 USD. [Corrected comparison and raw evidence](docs/release-validation.md#m8-corrected-provider-validation)
+All measurements come from local sandbox experiments. Hybrid fell short of the 95% retrieval target on the 10,000-definition corpus. All strategies returned candidates for every negative case in that run. The load result covers one warm burst, and the provider comparison covers four synthetic tasks.
 
 ## Development and testing
 
@@ -179,40 +158,22 @@ docker compose -p toolmesh-pycheck down
 
 For standalone Python checks, run `uv run --locked pytest -q` without setting `TOOLMESH_TEST_API`. Set `TOOLMESH_TEST_WEB` and `TOOLMESH_TEST_API` when choosing alternate host ports. The [CI workflow](.github/workflows/ci.yml) records the expected verification steps, including the secret scan. [Milestone documentation checklist](docs/contributing.md#milestone-definition-of-done)
 
-## Repository layout
+## Repository and roadmap
 
 | Path | Responsibility |
 |---|---|
-| [`gateway/`](gateway/) | Authenticated REST and MCP entry points, invocation, approval reconciliation, scoped discovery, and scripted workflow |
-| [`control_plane/`](control_plane/) | Catalog registration, release lifecycle, crawler jobs, and source translators |
-| [`services/`](services/) | Payments, Support, Communication, Inventory, IT Operations, HR, and Analytics adapters and domain logic |
-| [`shared/`](shared/) | Business tool contracts, SQL helpers, Protobuf descriptors, and generated gRPC stubs |
-| [`db/migrations/`](db/migrations/) | Alembic schema changes, domain roles, fixtures, and permissions |
-| [`apps/web/`](apps/web/) | Operations console and browser acceptance tests |
-| [`benchmarks/`](benchmarks/) | Synthetic retrieval dataset, evaluation worker, operations rehearsal, and raw evidence |
-| [`tests/`](tests/) | Python unit and real-service integration checks |
-| [`infra/`](infra/) | Container images and PostgreSQL initialization |
+| [`gateway/`](gateway/) | Authentication, discovery, runtime dispatch, approvals, and provider Playground |
+| [`control_plane/`](control_plane/) | Catalog, registered targets, crawler, and release lifecycle |
+| [`services/`](services/) and [`shared/`](shared/) | Domain adapters, tool contracts, and Protobuf definitions |
+| [`db/migrations/`](db/migrations/) and [`infra/`](infra/) | Database, sandbox fixtures, and container images |
+| [`apps/web/`](apps/web/) and [`tests/`](tests/) | Console, browser workflows, and Python integration checks |
+| [`benchmarks/`](benchmarks/) | Evaluation harness, synthetic fixtures, and raw results |
 
-## Roadmap
+| Status | Scope |
+|---|---|
+| Implemented through M8 | Scoped discovery and execution, versioned contracts, 36 specified business tools, approval and receipt reconciliation, console, telemetry, and single-read OpenAI Playground |
+| Planned | Multi-step model workflows, production identity, multi-tenant isolation, high availability, and sustained capacity validation |
 
-| Milestone | State | Scope |
-|---|---|---|
-| M0–M2 | Implemented | Compose foundation, authenticated runtime, Payments and Support, human refund approval, reconciliation, and simulated communication |
-| M3 | Implemented | Allowlisted AutoCrawler, contract lifecycle, Inventory fixture, and three IT gRPC operations |
-| M4 | Implemented | PostgreSQL keyword, vector, and hybrid retrieval and measured synthetic evaluations |
-| M5 | Implemented | All 36 specified domain tools, HR and Analytics, four scripted profiles, policy revisions and simulation, and configurable quotas |
-| M6 | Implemented | Execution timelines and telemetry, bounded reads, stale recovery, operator CLI, and local concurrency and fault rehearsal |
-| M8 | Implemented | Opt-in OpenAI read-only Playground, provider usage and trace view, and a refreshed architecture and console |
-| M7 | Implemented | Fresh-install and accessibility validation, held-out retrieval and a 100-client burst, local provider comparison, and the tagged sandbox release |
+The supported deployment is a single local Compose sandbox. Payments, restarts, and messages use synthetic fixtures. Crawling is limited to configured targets. Circuit state is local to a gateway process, and an ordinary write with an uncertain result requires operator review.
 
-No implementation milestone is in progress at this checkpoint. [Changelog](CHANGELOG.md) · [Product specification](docs/ToolMesh_AI_SRS.md)
-
-## Limitations
-
-- The supported deployment is a single local Compose sandbox. Production SSO, TLS, multi-tenant isolation, and high availability are planned.
-- The local sandbox implements all 36 specified business tools across six domains plus supplemental fixture and workflow tools. Publication state determines which operations are discoverable.
-- Crawler targets are configured local services. Arbitrary external registration and gRPC reflection are outside the current scope.
-- Agent scenarios run bounded LangGraph scripts. The local Ollama evaluation harness measures tool selection. The console supports a single OpenAI-selected read. Multi-step model workflows remain planned. Payments, restarts, and messages are simulated.
-- If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Restart approvals also use read-only receipt reconciliation. Ordinary writes have no automated reconciliation or write replay.
-- Circuit state is per gateway process. OTLP export requires a collector, and instrumentation covers the gateway boundary. Background invocations may lack HTTP correlation IDs. Older execution rows predate the timeline. Production throughput remains unmeasured.
-- Vector ranking uses exact distance over the eligible set. The negative cases still receive candidates. Sustained capacity, gateway-only overhead, and provider accuracy beyond the four labeled tasks remain unmeasured.
+[Milestone history](CHANGELOG.md) · [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0) · [Product specification](docs/ToolMesh_AI_SRS.md)
