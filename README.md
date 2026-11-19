@@ -2,9 +2,9 @@
 
 # ToolMesh AI
 
-**Enterprise MCP gateway for dynamic tool discovery, governed execution and agent operations.**
+**A unified gateway for discovering and securely executing enterprise tools at scale.**
 
-One interface for REST, MCP and gRPC services. Discover the right tool, load its contract on demand, enforce access policies, and trace every execution.
+ToolMesh AI addresses tool-context overload, fragmented service integrations and unsafe agent execution through on-demand discovery, a versioned catalog and centralized enforcement.
 
 [![CI](https://github.com/NagaRamya1531-tech/ToolMesh-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/NagaRamya1531-tech/ToolMesh-AI/actions/workflows/ci.yml)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
@@ -12,26 +12,14 @@ One interface for REST, MCP and gRPC services. Discover the right tool, load its
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white)
 ![React](https://img.shields.io/badge/Frontend-React-087EA4?logo=react&logoColor=white)
 
-[Architecture](#architecture) · [Product demo](#demo-workflow) · [Benchmarks](#benchmarks) · [Quick start](#quick-start)
+[Problem & solution](#problem-and-solution) · [Architecture](#architecture) · [Product demo](#demo-workflow) · [Benchmarks](#benchmarks) · [Quick start](#quick-start)
 
 </div>
 
-| Backend services | Integration protocols | Retrieval test corpus | Hybrid input-token reduction |
-| :---: | :---: | :---: | :---: |
-| **7** | **3** | **10,000 definitions** | **92.9%** |
-
-<sub>Local Compose topology; synthetic retrieval corpus; token reduction measured on four fixed M8 tasks per strategy. See [benchmark methodology](#benchmarks).</sub>
-
-![ToolMesh operations console](docs/screenshots/m8-overview-workspace.png)
-
-*Actual M8 sandbox console: request path, dependency health and recorded execution outcomes.*
-
-> **Status:** Local-first implementation through M8. Business records and external side effects are simulated. Production identity, tenant isolation, high availability and unrestricted multi-step model planning remain future work.
-
 ## Contents
 
-- [What the system does](#what-the-system-does)
 - [Problem and solution](#problem-and-solution)
+- [What the system does](#what-the-system-does)
 - [Architecture](#architecture)
 - [Service catalog](#service-catalog)
 - [Demo workflow](#demo-workflow)
@@ -45,6 +33,77 @@ One interface for REST, MCP and gRPC services. Discover the right tool, load its
 - [Repository and roadmap](#repository-and-roadmap)
 - [Limitations](#limitations)
 - [Engineering documentation](#engineering-documentation)
+
+## Problem and solution
+
+### The engineering problem
+
+AI agents can reason about a user's request, but they need tools to read enterprise data and perform actions. An organization may expose hundreds or thousands of operations across payment systems, support platforms, HR applications, infrastructure services and internal APIs.
+
+Consider a support agent investigating a duplicate charge. It needs to find the relevant payment operations, retrieve the customer's transactions, open a support ticket and arrange a refund. That final action must be restricted to the right requester and approved by a separate reviewer. If a refund request times out after the payment service commits the write, retrying blindly could create another refund.
+
+This is not merely a prompt-engineering problem. It is a **tool discovery, integration, authorization and distributed execution problem**.
+
+| Challenge | Why it matters |
+|---|---|
+| Tool-context overload | Supplying every tool schema to a model increases input tokens and leaves less context for the actual task. |
+| Tool selection at scale | Similar tool names and descriptions make finding the correct, eligible operation harder. |
+| Fragmented integrations | Agents must otherwise maintain separate connections, protocol adapters, credentials and changing API contracts. |
+| Unsafe execution | A model can request an operation that is outside its permissions or requires approval. Instructions alone cannot enforce access control. |
+| Uncertain writes and limited visibility | A timeout does not prove a write failed. Operators need durable evidence and a way to reconcile uncertain outcomes. |
+
+### Traditional integrations vs. ToolMesh
+
+```mermaid
+flowchart LR
+    subgraph Direct["Direct agent integrations"]
+        A1["Support agent"] --> P1["Payments API"]
+        A1 --> S1["Support MCP"]
+        A2["Finance agent"] --> P1
+        A2 --> S1
+        A3["IT agent"] --> I1["IT gRPC"]
+        A1 -.-> I1
+    end
+    subgraph Unified["Gateway-based integrations"]
+        B1["Support agent"] --> G["ToolMesh gateway"]
+        B2["Finance agent"] --> G
+        B3["IT agent"] --> G
+        G --> P2["Payments API"]
+        G --> S2["Support MCP"]
+        G --> I2["IT gRPC"]
+        G --> C[("Catalog and execution evidence")]
+    end
+    classDef client fill:#e0e7ff,stroke:#6366f1,color:#1e1b4b
+    classDef plane fill:#cffafe,stroke:#0891b2,color:#164e63
+    classDef store fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef boundary fill:#fef3c7,stroke:#d97706,color:#78350f
+    class A1,A2,A3,B1,B2,B3 client
+    class G plane
+    class C store
+    class P1,S1,I1,P2,S2,I2 boundary
+```
+
+The left-hand side illustrates duplicated integration paths, not a measured production topology. The right-hand side centralizes discovery, routing and enforcement while preserving service-specific permissions.
+
+### What ToolMesh solves
+
+ToolMesh gives agents and developers a single gateway. Rather than loading the entire catalog, clients discover eligible services and tools, retrieve only the required schema and invoke the selected operation. The gateway, not the model, determines whether the call may proceed.
+
+| Problem | Implemented solution |
+|---|---|
+| Excessive context consumption | Four gateway meta-tools and on-demand schema retrieval |
+| Finding relevant operations | Permission-filtered keyword, vector and hybrid ranking |
+| Multiple service protocols | Unified MCP and REST entry points with REST, MCP and gRPC adapters |
+| Changing API contracts | Configured crawler, immutable schema versions, explicit publication and quarantine |
+| Unauthorized or sensitive actions | Scoped identities, current grants, validated arguments, Redis quotas and separate approval for protected writes |
+| Ambiguous write outcomes | Persisted execution states, idempotent refund ledger and exact receipt reconciliation |
+| Operational visibility | React console, audit evidence, execution timelines and telemetry |
+
+### Why this project exists
+
+The goal is to build the infrastructure that lets multiple agents use enterprise tools safely and efficiently, not to build a general-purpose chatbot. The duplicate-payment workflow is a concrete test of that infrastructure: three services, distinct requester and reviewer identities, an approval-gated write and a recoverable execution trail.
+
+The current implementation is a local sandbox. Its measured results demonstrate improvements in specific experiments, not production-scale guarantees. See [benchmarks](#benchmarks) and [limitations](#limitations).
 
 ## What the system does
 
@@ -62,9 +121,19 @@ ToolMesh separates agent reasoning from the system that authorizes and executes 
 | Operations | React console, execution history, audit evidence and telemetry |
 | Evaluation | Isolated synthetic retrieval corpus, provider comparisons and raw exports |
 
-## Problem and solution
+### Implementation at a glance
 
-Agents that receive an entire tool catalog upfront consume context even when they need only one operation. Direct integrations also duplicate contract and credential management. ToolMesh provides a shared access boundary: discover on demand, enforce authorization outside the model and record execution outcomes.
+| Backend services | Integration protocols | Retrieval test corpus | Hybrid input-token reduction |
+| :---: | :---: | :---: | :---: |
+| **7** | **3** | **10,000 definitions** | **92.9%** |
+
+<sub>Local Compose topology; synthetic retrieval corpus; token reduction measured on four fixed M8 tasks per strategy. See [benchmark methodology](#benchmarks).</sub>
+
+![ToolMesh operations console](docs/screenshots/m8-overview-workspace.png)
+
+*Actual M8 sandbox console: request path, dependency health and recorded execution outcomes.*
+
+> **Status:** Local-first implementation through M8. Business records and external side effects are simulated. Production identity, tenant isolation, high availability and unrestricted multi-step model planning remain future work.
 
 ## Architecture
 
