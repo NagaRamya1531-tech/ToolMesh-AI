@@ -280,6 +280,16 @@ erDiagram
     }
 ```
 
+## Protected command storage
+
+M9.1.2 adds an isolated store for simulated refunds and IT restarts. It takes shared locks on the dispatch gate, authorization revision, and catalog, in that order. Missing coordination rows or a gate other than `DURABLE` reject durable admission. The store serializes matching request keys with a transaction-scoped advisory lock. The execution, pending approval, reservation, sealed command, and audit event commit together. Pre-commit lock, deadlock, and serialization errors permit bounded database-only retries. An ambiguous commit triggers a fresh transaction to look up the same reservation without writing a second command.
+
+The store resolves a matching key before choosing the active tool version. V1 canonicalizes the pinned contract's closed object schema and normalizes object ordering. Separate HMAC-SHA256 keys protect scoped request lookup and effect-intent binding. Response field selection does not change the operation identity. Imported legacy aliases can resolve existing reservations. A matching legacy reservation without an imported alias blocks a new command. Existing legacy data is left in place.
+
+Payloads use AES-256-GCM with independently generated data keys and nonces. Associated data binds the record type, execution ID, scope, and schema version. An injected sandbox provider wraps the data key with a versioned key held outside PostgreSQL. It supports rewrapping ciphertext under a new wrapping key. Raw client keys and argument plaintext are absent from SQL parameters and from the store's legacy and audit rows. The legacy approval row carries empty arguments and keyed placeholders.
+
+The running gateway does not use this store. Existing application privileges and dispatch behavior are unchanged. Integration requires an authenticated caller, scoped runtime grants, shared digest key custody across replicas, guarded policy writers, and legacy cutover. Digest-key rotation, downstream deduplication, and automatic replay remain outside this slice. [Store](../gateway/execution_store.py) · [Payload protection](../gateway/execution_crypto.py) · [PostgreSQL tests](../tests/test_execution_store.py)
+
 ## Failure recovery
 
 ```mermaid

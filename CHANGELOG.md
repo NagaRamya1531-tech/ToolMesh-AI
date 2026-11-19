@@ -1,5 +1,11 @@
 # Changelog
 
+## M9.1.2 · Command store and payload protection
+
+- Added an isolated PostgreSQL command store for sandbox refunds and IT restarts, with pinned-version idempotency, atomic writes, and lookup-only recovery after an ambiguous commit. Missing coordination rows block admission.
+- Added AES-256-GCM envelope encryption with injected wrapping keys and independent HMAC-SHA256 lookup and intent keys. Gateway integration, grants, and dispatch are unchanged. [Storage design](docs/architecture.md#protected-command-storage)
+- Passed 144 Python tests with the disposable Compose integration and PostgreSQL fixtures enabled, and all 14 Chromium tests on a fresh single-worker rerun. Earlier browser attempts timed out on existing flows. Ruff, mypy, lockfile validation, and frontend build passed. Both disposable stacks reported revision 0010, gate LEGACY, and zero durable commands after regression testing.
+
 ## M9.1.1 · Protected execution contracts and schema
 
 - Hardened independent review coverage for effective ledger privileges, both protected tools, schema boundaries, and downgrade refusal. The full Python suite passed 105 tests. All 14 Chromium checks passed on a fresh rerun after one policy simulation failure. [Review evidence and limitations](docs/architecture/M9_1_1_SCHEMA_IMPLEMENTATION.md#independent-review-hardening)
