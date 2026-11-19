@@ -1,0 +1,553 @@
+{
+  "host": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.10",
+  "provider": "Ollama",
+  "provider_version": "0.40.16",
+  "model": "gemma:2b",
+  "model_digest": "b50d6c999e592ae4f79acae23b4feaefbdfceaa7cd366df2610e3072c052a160",
+  "seed": 42,
+  "context_window": 8192,
+  "load": {
+    "clients": 100,
+    "elapsed_seconds": 0.7149876249968656,
+    "requests_per_second": 139.8625605589165,
+    "outcomes": {
+      "200": 100
+    },
+    "p50_ms": 580.81,
+    "p95_ms": 688.09,
+    "p99_ms": 711.76,
+    "samples": [
+      {
+        "outcome": "200",
+        "ms": 459.94
+      },
+      {
+        "outcome": "200",
+        "ms": 410.02
+      },
+      {
+        "outcome": "200",
+        "ms": 476.82
+      },
+      {
+        "outcome": "200",
+        "ms": 467.64
+      },
+      {
+        "outcome": "200",
+        "ms": 482.36
+      },
+      {
+        "outcome": "200",
+        "ms": 478.03
+      },
+      {
+        "outcome": "200",
+        "ms": 472.43
+      },
+      {
+        "outcome": "200",
+        "ms": 711.76
+      },
+      {
+        "outcome": "200",
+        "ms": 475.03
+      },
+      {
+        "outcome": "200",
+        "ms": 481.09
+      },
+      {
+        "outcome": "200",
+        "ms": 713.82
+      },
+      {
+        "outcome": "200",
+        "ms": 483.65
+      },
+      {
+        "outcome": "200",
+        "ms": 489.69
+      },
+      {
+        "outcome": "200",
+        "ms": 486.82
+      },
+      {
+        "outcome": "200",
+        "ms": 491.98
+      },
+      {
+        "outcome": "200",
+        "ms": 486.23
+      },
+      {
+        "outcome": "200",
+        "ms": 495.98
+      },
+      {
+        "outcome": "200",
+        "ms": 497.81
+      },
+      {
+        "outcome": "200",
+        "ms": 492.11
+      },
+      {
+        "outcome": "200",
+        "ms": 503.26
+      },
+      {
+        "outcome": "200",
+        "ms": 503.72
+      },
+      {
+        "outcome": "200",
+        "ms": 504.97
+      },
+      {
+        "outcome": "200",
+        "ms": 513.85
+      },
+      {
+        "outcome": "200",
+        "ms": 515.73
+      },
+      {
+        "outcome": "200",
+        "ms": 508.0
+      },
+      {
+        "outcome": "200",
+        "ms": 510.41
+      },
+      {
+        "outcome": "200",
+        "ms": 518.69
+      },
+      {
+        "outcome": "200",
+        "ms": 516.94
+      },
+      {
+        "outcome": "200",
+        "ms": 522.52
+      },
+      {
+        "outcome": "200",
+        "ms": 524.7
+      },
+      {
+        "outcome": "200",
+        "ms": 537.48
+      },
+      {
+        "outcome": "200",
+        "ms": 533.09
+      },
+      {
+        "outcome": "200",
+        "ms": 522.96
+      },
+      {
+        "outcome": "200",
+        "ms": 530.5
+      },
+      {
+        "outcome": "200",
+        "ms": 526.93
+      },
+      {
+        "outcome": "200",
+        "ms": 525.78
+      },
+      {
+        "outcome": "200",
+        "ms": 529.32
+      },
+      {
+        "outcome": "200",
+        "ms": 534.74
+      },
+      {
+        "outcome": "200",
+        "ms": 539.06
+      },
+      {
+        "outcome": "200",
+        "ms": 538.35
+      },
+      {
+        "outcome": "200",
+        "ms": 540.21
+      },
+      {
+        "outcome": "200",
+        "ms": 542.24
+      },
+      {
+        "outcome": "200",
+        "ms": 545.15
+      },
+      {
+        "outcome": "200",
+        "ms": 544.22
+      },
+      {
+        "outcome": "200",
+        "ms": 550.03
+      },
+      {
+        "outcome": "200",
+        "ms": 548.22
+      },
+      {
+        "outcome": "200",
+        "ms": 547.59
+      },
+      {
+        "outcome": "200",
+        "ms": 555.89
+      },
+      {
+        "outcome": "200",
+        "ms": 561.79
+      },
+      {
+        "outcome": "200",
+        "ms": 569.37
+      },
+      {
+        "outcome": "200",
+        "ms": 581.86
+      },
+      {
+        "outcome": "200",
+        "ms": 575.85
+      },
+      {
+        "outcome": "200",
+        "ms": 579.76
+      },
+      {
+        "outcome": "200",
+        "ms": 584.36
+      },
+      {
+        "outcome": "200",
+        "ms": 585.76
+      },
+      {
+        "outcome": "200",
+        "ms": 586.22
+      },
+      {
+        "outcome": "200",
+        "ms": 588.96
+      },
+      {
+        "outcome": "200",
+        "ms": 589.32
+      },
+      {
+        "outcome": "200",
+        "ms": 591.17
+      },
+      {
+        "outcome": "200",
+        "ms": 592.67
+      },
+      {
+        "outcome": "200",
+        "ms": 594.72
+      },
+      {
+        "outcome": "200",
+        "ms": 595.47
+      },
+      {
+        "outcome": "200",
+        "ms": 599.26
+      },
+      {
+        "outcome": "200",
+        "ms": 597.25
+      },
+      {
+        "outcome": "200",
+        "ms": 609.14
+      },
+      {
+        "outcome": "200",
+        "ms": 600.81
+      },
+      {
+        "outcome": "200",
+        "ms": 604.8
+      },
+      {
+        "outcome": "200",
+        "ms": 608.09
+      },
+      {
+        "outcome": "200",
+        "ms": 613.31
+      },
+      {
+        "outcome": "200",
+        "ms": 620.42
+      },
+      {
+        "outcome": "200",
+        "ms": 616.59
+      },
+      {
+        "outcome": "200",
+        "ms": 614.03
+      },
+      {
+        "outcome": "200",
+        "ms": 622.12
+      },
+      {
+        "outcome": "200",
+        "ms": 623.02
+      },
+      {
+        "outcome": "200",
+        "ms": 625.29
+      },
+      {
+        "outcome": "200",
+        "ms": 628.37
+      },
+      {
+        "outcome": "200",
+        "ms": 629.2
+      },
+      {
+        "outcome": "200",
+        "ms": 632.26
+      },
+      {
+        "outcome": "200",
+        "ms": 633.67
+      },
+      {
+        "outcome": "200",
+        "ms": 634.14
+      },
+      {
+        "outcome": "200",
+        "ms": 635.7
+      },
+      {
+        "outcome": "200",
+        "ms": 642.18
+      },
+      {
+        "outcome": "200",
+        "ms": 642.66
+      },
+      {
+        "outcome": "200",
+        "ms": 638.56
+      },
+      {
+        "outcome": "200",
+        "ms": 648.72
+      },
+      {
+        "outcome": "200",
+        "ms": 645.11
+      },
+      {
+        "outcome": "200",
+        "ms": 651.94
+      },
+      {
+        "outcome": "200",
+        "ms": 655.2
+      },
+      {
+        "outcome": "200",
+        "ms": 656.15
+      },
+      {
+        "outcome": "200",
+        "ms": 658.06
+      },
+      {
+        "outcome": "200",
+        "ms": 665.76
+      },
+      {
+        "outcome": "200",
+        "ms": 669.64
+      },
+      {
+        "outcome": "200",
+        "ms": 672.62
+      },
+      {
+        "outcome": "200",
+        "ms": 675.75
+      },
+      {
+        "outcome": "200",
+        "ms": 680.54
+      },
+      {
+        "outcome": "200",
+        "ms": 683.6
+      },
+      {
+        "outcome": "200",
+        "ms": 688.09
+      },
+      {
+        "outcome": "200",
+        "ms": 695.75
+      },
+      {
+        "outcome": "200",
+        "ms": 696.88
+      },
+      {
+        "outcome": "200",
+        "ms": 697.77
+      }
+    ]
+  },
+  "provider_trials": [
+    {
+      "role": "support",
+      "strategy": "full",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15422.54
+    },
+    {
+      "role": "support",
+      "strategy": "keyword",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15409.57
+    },
+    {
+      "role": "support",
+      "strategy": "vector",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15305.71
+    },
+    {
+      "role": "support",
+      "strategy": "hybrid",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15205.05
+    },
+    {
+      "role": "finance",
+      "strategy": "full",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15825.13
+    },
+    {
+      "role": "finance",
+      "strategy": "keyword",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15248.71
+    },
+    {
+      "role": "finance",
+      "strategy": "vector",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15630.95
+    },
+    {
+      "role": "finance",
+      "strategy": "hybrid",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 16950.99
+    },
+    {
+      "role": "it",
+      "strategy": "full",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15564.24
+    },
+    {
+      "role": "it",
+      "strategy": "keyword",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 17511.48
+    },
+    {
+      "role": "it",
+      "strategy": "vector",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15563.57
+    },
+    {
+      "role": "it",
+      "strategy": "hybrid",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 20751.13
+    },
+    {
+      "role": "hr",
+      "strategy": "full",
+      "expected_tool": "hr.get_leave_balance",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 25692.27
+    },
+    {
+      "role": "hr",
+      "strategy": "keyword",
+      "expected_tool": "hr.get_leave_balance",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 17043.42
+    },
+    {
+      "role": "hr",
+      "strategy": "vector",
+      "expected_tool": "hr.get_leave_balance",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 16948.94
+    },
+    {
+      "role": "hr",
+      "strategy": "hybrid",
+      "expected_tool": "hr.get_leave_balance",
+      "success": false,
+      "outcome": "ReadTimeout",
+      "wall_ms": 15985.69
+    }
+  ]
+}

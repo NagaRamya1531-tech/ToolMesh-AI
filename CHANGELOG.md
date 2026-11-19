@@ -1,5 +1,17 @@
 # Changelog
 
+## M7 · Sandbox release v0.1.0
+
+- Added a loopback Ollama evaluation harness comparing upfront schemas, keyword, vector and hybrid discovery. The runner verifies selected fixture reads through the live gateway and records provider-reported usage.
+- Published a held-out 1,000-definition retrieval run, four model tasks per strategy, and a 100-client authenticated discovery burst. Hybrid Recall@5 was 94.4%, ranked model trials verified two of four tasks per strategy, and the burst returned 100 HTTP 200 responses. [Method, raw evidence and limitations](docs/release-validation.md)
+- Updated the demo, README, security and architecture notes, ADRs and a real console evaluation screenshot.
+
+### Verification
+
+- Built and bootstrapped a fresh clone, repeated migration `0009`, and exercised REST, MCP and gRPC against real dependencies. Eleven Chromium checks passed, including keyboard operation and axe checks at the documented viewport sizes.
+- In the delayed-refund rehearsal, concurrent approval produced one logical effect. The execution returned `UNKNOWN` before receipt reconciliation, then reached `SUCCEEDED`. PostgreSQL contained one refund for the selected transaction.
+- Retained the initial failed provider comparison. A wrong model asset path affected the first browser evaluation checks and was corrected for the rerun. The combined fault-injected Python run exposed an immediate-response test incompatible with injected delay. The standard suite passed all 19 tests on a separate fresh stack with Python 3.12 and injection disabled.
+
 ## M6 · Reliability and operations
 
 - Added PostgreSQL execution timelines and request and OpenTelemetry correlation IDs. The scoped REST endpoint, console and operator CLI expose the recorded evidence.

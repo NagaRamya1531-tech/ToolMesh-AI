@@ -1,6 +1,6 @@
 # ToolMesh AI
 
-ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M6**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark.
+ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M7**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark. [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0)
 
 ## Contents
 
@@ -11,6 +11,7 @@ ToolMesh AI is a local-first MCP gateway for discovering and invoking internal s
 - [Operations console](#operations-console)
 - [Reliability and operations](#reliability-and-operations)
 - [Benchmarks](#benchmarks)
+- [Release validation](docs/release-validation.md)
 - [Development and testing](#development-and-testing)
 - [Repository layout](#repository-layout)
 - [Roadmap](#roadmap)
@@ -88,7 +89,7 @@ The following screenshots come from running Compose sandboxes and show synthetic
 
 ![ToolMesh AutoCrawler showing a completed IT Operations crawl and three discovered drafts](docs/screenshots/m3-crawler.png)
 
-[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png)
+[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
 
 ## Reliability and operations
 
@@ -109,6 +110,8 @@ Hybrid had the highest recall and fell short of the 95% target. All three strate
 [Methodology, environment, and reproduction commands](docs/discovery-evaluation.md) · [Raw case export](benchmarks/results/m4-seed42-10000x1000.json.gz)
 
 The M6 local operations rehearsal completed 20 Payments reads in batches of four. Client-side median latency was 38.83 ms and nearest-rank p95 was 153.71 ms. The fault run measured six retries before the circuit opened and verified fail-closed Redis quota behavior. [Operations methodology and limitations](docs/operations-rehearsal.md) · [Raw samples](benchmarks/results/m6-local-operations.json)
+
+M7 measured 94.4% hybrid Recall@5 on 1,000 synthetic definitions and 120 labeled cases. Gemma 2B completed two of four read cases with each ranked strategy and zero with upfront schemas. A warm burst of 100 authenticated hybrid searches returned 100 HTTP 200 responses with 567.08 ms client p95. [Release methodology, raw evidence, and limitations](docs/release-validation.md)
 
 ## Development and testing
 
@@ -162,7 +165,7 @@ For standalone Python checks, run `uv run --locked pytest -q` without setting `T
 | M4 | Implemented | PostgreSQL keyword, vector, and hybrid retrieval and measured synthetic evaluations |
 | M5 | Implemented | All 36 specified domain tools, HR and Analytics, four scripted profiles, policy revisions and simulation, and configurable quotas |
 | M6 | Implemented | Execution timelines and telemetry, bounded reads, stale recovery, operator CLI, and local concurrency and fault rehearsal |
-| M7 | Planned | Release validation and end-to-end evaluation, including provider measurements where configured |
+| M7 | Implemented | Fresh-install and accessibility validation, held-out retrieval and a 100-client burst, local provider comparison, and the tagged sandbox release |
 
 No implementation milestone is in progress at this checkpoint. [Changelog](CHANGELOG.md) · [Product specification](docs/ToolMesh_AI_SRS.md)
 
@@ -171,7 +174,7 @@ No implementation milestone is in progress at this checkpoint. [Changelog](CHANG
 - The supported deployment is a single local Compose sandbox. Production SSO, TLS, multi-tenant isolation, and high availability are planned.
 - The local sandbox implements all 36 specified business tools across six domains plus supplemental fixture and workflow tools. Publication state determines which operations are discoverable.
 - Crawler targets are configured local services. Arbitrary external registration and gRPC reflection are outside the current scope.
-- Agent scenarios run bounded LangGraph scripts. LLM-provider execution is planned. Payments, restarts, and messages are simulated.
+- Agent scenarios run bounded LangGraph scripts. The local Ollama evaluation harness measures tool selection. Model-driven workflows in the console remain planned. Payments, restarts, and messages are simulated.
 - If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Restart approvals also use read-only receipt reconciliation. Ordinary writes have no automated reconciliation or write replay.
 - Circuit state is per gateway process. OTLP export requires a collector, and instrumentation covers the gateway boundary. Background invocations may lack HTTP correlation IDs. Older execution rows predate the timeline. Production throughput remains unmeasured.
-- Vector ranking uses exact distance over the eligible set. M4 measures sequential retrieval on synthetic data and leaves production throughput and semantic abstention unverified.
+- Vector ranking uses exact distance over the eligible set. The negative cases still receive candidates. Sustained capacity, gateway-only overhead, and provider accuracy beyond the four labeled tasks remain unmeasured.

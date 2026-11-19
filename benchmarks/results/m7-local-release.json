@@ -1,0 +1,847 @@
+{
+  "host": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.10",
+  "provider": "Ollama",
+  "provider_version": "0.40.16",
+  "model": "gemma:2b",
+  "model_digest": "b50d6c999e592ae4f79acae23b4feaefbdfceaa7cd366df2610e3072c052a160",
+  "seed": 42,
+  "context_window": 8192,
+  "load": {
+    "clients": 100,
+    "warmup": {
+      "outcome": "200",
+      "ms": 125.99
+    },
+    "elapsed_seconds": 0.599443582999811,
+    "requests_per_second": 166.821370410819,
+    "outcomes": {
+      "200": 100
+    },
+    "p50_ms": 331.87,
+    "p95_ms": 567.08,
+    "p99_ms": 589.42,
+    "samples": [
+      {
+        "outcome": "200",
+        "ms": 115.31
+      },
+      {
+        "outcome": "200",
+        "ms": 114.65
+      },
+      {
+        "outcome": "200",
+        "ms": 114.58
+      },
+      {
+        "outcome": "200",
+        "ms": 200.03
+      },
+      {
+        "outcome": "200",
+        "ms": 200.98
+      },
+      {
+        "outcome": "200",
+        "ms": 239.53
+      },
+      {
+        "outcome": "200",
+        "ms": 160.67
+      },
+      {
+        "outcome": "200",
+        "ms": 114.25
+      },
+      {
+        "outcome": "200",
+        "ms": 114.98
+      },
+      {
+        "outcome": "200",
+        "ms": 179.47
+      },
+      {
+        "outcome": "200",
+        "ms": 113.99
+      },
+      {
+        "outcome": "200",
+        "ms": 206.66
+      },
+      {
+        "outcome": "200",
+        "ms": 210.03
+      },
+      {
+        "outcome": "200",
+        "ms": 209.54
+      },
+      {
+        "outcome": "200",
+        "ms": 216.05
+      },
+      {
+        "outcome": "200",
+        "ms": 335.49
+      },
+      {
+        "outcome": "200",
+        "ms": 212.57
+      },
+      {
+        "outcome": "200",
+        "ms": 219.36
+      },
+      {
+        "outcome": "200",
+        "ms": 227.01
+      },
+      {
+        "outcome": "200",
+        "ms": 228.62
+      },
+      {
+        "outcome": "200",
+        "ms": 222.08
+      },
+      {
+        "outcome": "200",
+        "ms": 233.07
+      },
+      {
+        "outcome": "200",
+        "ms": 233.51
+      },
+      {
+        "outcome": "200",
+        "ms": 134.86
+      },
+      {
+        "outcome": "200",
+        "ms": 235.53
+      },
+      {
+        "outcome": "200",
+        "ms": 245.36
+      },
+      {
+        "outcome": "200",
+        "ms": 250.82
+      },
+      {
+        "outcome": "200",
+        "ms": 241.78
+      },
+      {
+        "outcome": "200",
+        "ms": 254.75
+      },
+      {
+        "outcome": "200",
+        "ms": 257.86
+      },
+      {
+        "outcome": "200",
+        "ms": 261.07
+      },
+      {
+        "outcome": "200",
+        "ms": 264.94
+      },
+      {
+        "outcome": "200",
+        "ms": 268.41
+      },
+      {
+        "outcome": "200",
+        "ms": 273.71
+      },
+      {
+        "outcome": "200",
+        "ms": 275.31
+      },
+      {
+        "outcome": "200",
+        "ms": 277.68
+      },
+      {
+        "outcome": "200",
+        "ms": 286.9
+      },
+      {
+        "outcome": "200",
+        "ms": 284.88
+      },
+      {
+        "outcome": "200",
+        "ms": 289.08
+      },
+      {
+        "outcome": "200",
+        "ms": 293.28
+      },
+      {
+        "outcome": "200",
+        "ms": 296.9
+      },
+      {
+        "outcome": "200",
+        "ms": 300.27
+      },
+      {
+        "outcome": "200",
+        "ms": 303.01
+      },
+      {
+        "outcome": "200",
+        "ms": 307.13
+      },
+      {
+        "outcome": "200",
+        "ms": 322.38
+      },
+      {
+        "outcome": "200",
+        "ms": 308.77
+      },
+      {
+        "outcome": "200",
+        "ms": 324.08
+      },
+      {
+        "outcome": "200",
+        "ms": 312.19
+      },
+      {
+        "outcome": "200",
+        "ms": 316.29
+      },
+      {
+        "outcome": "200",
+        "ms": 319.42
+      },
+      {
+        "outcome": "200",
+        "ms": 328.25
+      },
+      {
+        "outcome": "200",
+        "ms": 337.65
+      },
+      {
+        "outcome": "200",
+        "ms": 338.88
+      },
+      {
+        "outcome": "200",
+        "ms": 342.12
+      },
+      {
+        "outcome": "200",
+        "ms": 390.8
+      },
+      {
+        "outcome": "200",
+        "ms": 393.87
+      },
+      {
+        "outcome": "200",
+        "ms": 485.04
+      },
+      {
+        "outcome": "200",
+        "ms": 552.1
+      },
+      {
+        "outcome": "200",
+        "ms": 594.02
+      },
+      {
+        "outcome": "200",
+        "ms": 365.48
+      },
+      {
+        "outcome": "200",
+        "ms": 373.32
+      },
+      {
+        "outcome": "200",
+        "ms": 377.66
+      },
+      {
+        "outcome": "200",
+        "ms": 382.73
+      },
+      {
+        "outcome": "200",
+        "ms": 347.02
+      },
+      {
+        "outcome": "200",
+        "ms": 347.86
+      },
+      {
+        "outcome": "200",
+        "ms": 384.03
+      },
+      {
+        "outcome": "200",
+        "ms": 399.85
+      },
+      {
+        "outcome": "200",
+        "ms": 386.58
+      },
+      {
+        "outcome": "200",
+        "ms": 397.2
+      },
+      {
+        "outcome": "200",
+        "ms": 404.2
+      },
+      {
+        "outcome": "200",
+        "ms": 403.1
+      },
+      {
+        "outcome": "200",
+        "ms": 408.1
+      },
+      {
+        "outcome": "200",
+        "ms": 411.59
+      },
+      {
+        "outcome": "200",
+        "ms": 418.31
+      },
+      {
+        "outcome": "200",
+        "ms": 423.99
+      },
+      {
+        "outcome": "200",
+        "ms": 427.9
+      },
+      {
+        "outcome": "200",
+        "ms": 437.04
+      },
+      {
+        "outcome": "200",
+        "ms": 351.3
+      },
+      {
+        "outcome": "200",
+        "ms": 442.82
+      },
+      {
+        "outcome": "200",
+        "ms": 447.61
+      },
+      {
+        "outcome": "200",
+        "ms": 451.28
+      },
+      {
+        "outcome": "200",
+        "ms": 457.42
+      },
+      {
+        "outcome": "200",
+        "ms": 456.55
+      },
+      {
+        "outcome": "200",
+        "ms": 481.1
+      },
+      {
+        "outcome": "200",
+        "ms": 355.18
+      },
+      {
+        "outcome": "200",
+        "ms": 532.57
+      },
+      {
+        "outcome": "200",
+        "ms": 534.23
+      },
+      {
+        "outcome": "200",
+        "ms": 537.28
+      },
+      {
+        "outcome": "200",
+        "ms": 542.75
+      },
+      {
+        "outcome": "200",
+        "ms": 546.69
+      },
+      {
+        "outcome": "200",
+        "ms": 527.39
+      },
+      {
+        "outcome": "200",
+        "ms": 557.76
+      },
+      {
+        "outcome": "200",
+        "ms": 580.27
+      },
+      {
+        "outcome": "200",
+        "ms": 567.08
+      },
+      {
+        "outcome": "200",
+        "ms": 558.67
+      },
+      {
+        "outcome": "200",
+        "ms": 573.33
+      },
+      {
+        "outcome": "200",
+        "ms": 563.6
+      },
+      {
+        "outcome": "200",
+        "ms": 589.42
+      },
+      {
+        "outcome": "200",
+        "ms": 585.26
+      },
+      {
+        "outcome": "200",
+        "ms": 360.12
+      }
+    ]
+  },
+  "provider_trials": [
+    {
+      "role": "support",
+      "strategy": "full",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "communication.create_channel",
+        "communication.get_channel_members",
+        "communication.get_message",
+        "communication.search_messages",
+        "communication.send_email",
+        "communication.send_notification",
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_refund_status",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "support.create_ticket",
+        "support.escalate_ticket",
+        "support.get_customer",
+        "support.get_ticket",
+        "support.resolve_ticket",
+        "support.search_tickets",
+        "support.update_ticket"
+      ],
+      "usage": {
+        "prompt_eval_count": 4509,
+        "prompt_eval_cached_count": 40,
+        "eval_count": 10,
+        "total_duration": 13097753833,
+        "load_duration": 138713250
+      },
+      "provider_ms": 13230.52,
+      "selected_tool": "support.create_ticket",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 14453.02
+    },
+    {
+      "role": "support",
+      "strategy": "keyword",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "prompt_eval_count": 178,
+        "prompt_eval_cached_count": 47,
+        "eval_count": 12,
+        "total_duration": 668401167,
+        "load_duration": 13919750
+      },
+      "provider_ms": 684.51,
+      "selected_tool": "payments.get_payment_method",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 777.94
+    },
+    {
+      "role": "support",
+      "strategy": "vector",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "payments.get_payment_method",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "prompt_eval_count": 178,
+        "prompt_eval_cached_count": 78,
+        "eval_count": 12,
+        "total_duration": 569014708,
+        "load_duration": 3754750
+      },
+      "provider_ms": 578.82,
+      "selected_tool": "payments.get_payment_method",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 754.93
+    },
+    {
+      "role": "support",
+      "strategy": "hybrid",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_transaction",
+        "payments.get_payment_method",
+        "payments.list_transactions",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "prompt_eval_count": 178,
+        "prompt_eval_cached_count": 95,
+        "eval_count": 12,
+        "total_duration": 516534291,
+        "load_duration": 7901666
+      },
+      "provider_ms": 521.0,
+      "selected_tool": "payments.get_payment_method",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 576.01
+    },
+    {
+      "role": "finance",
+      "strategy": "full",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "analytics.compare_periods",
+        "analytics.generate_report",
+        "analytics.get_customer_metrics",
+        "analytics.get_daily_revenue",
+        "analytics.get_refund_metrics",
+        "analytics.get_sales_metrics",
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_refund_status",
+        "payments.get_transaction",
+        "payments.issue_refund",
+        "payments.list_transactions"
+      ],
+      "usage": {
+        "prompt_eval_count": 3237,
+        "prompt_eval_cached_count": 40,
+        "eval_count": 18,
+        "total_duration": 8897268583,
+        "load_duration": 4236500
+      },
+      "provider_ms": 8985.91,
+      "selected_tool": "payments.get_payment_method",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 9098.22
+    },
+    {
+      "role": "finance",
+      "strategy": "keyword",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.get_daily_revenue",
+        "payments.get_payment_method"
+      ],
+      "usage": {
+        "prompt_eval_count": 171,
+        "prompt_eval_cached_count": 49,
+        "eval_count": 12,
+        "total_duration": 600189917,
+        "load_duration": 17137417
+      },
+      "provider_ms": 610.9,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "01a5171b-5382-420b-a79b-b3aa95f98bab",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 2560.91
+    },
+    {
+      "role": "finance",
+      "strategy": "vector",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.generate_report",
+        "analytics.compare_periods"
+      ],
+      "usage": {
+        "prompt_eval_count": 169,
+        "prompt_eval_cached_count": 113,
+        "eval_count": 12,
+        "total_duration": 460464208,
+        "load_duration": 14163291
+      },
+      "provider_ms": 465.37,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "61a87119-f87b-4132-8d35-5da046f8b704",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 563.96
+    },
+    {
+      "role": "finance",
+      "strategy": "hybrid",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.get_daily_revenue",
+        "analytics.generate_report"
+      ],
+      "usage": {
+        "prompt_eval_count": 171,
+        "prompt_eval_cached_count": 113,
+        "eval_count": 12,
+        "total_duration": 404929250,
+        "load_duration": 2951250
+      },
+      "provider_ms": 408.16,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "1a7bb045-a546-457b-8eca-93906485d3f8",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 454.71
+    },
+    {
+      "role": "it",
+      "strategy": "full",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.get_deployment_status",
+        "it.get_system_logs",
+        "it.restart_service"
+      ],
+      "usage": {
+        "prompt_eval_count": 815,
+        "prompt_eval_cached_count": 40,
+        "eval_count": 12,
+        "total_duration": 1807500959,
+        "load_duration": 2496834
+      },
+      "provider_ms": 1838.86,
+      "selected_tool": "it.get_deployment_status",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 1855.14
+    },
+    {
+      "role": "it",
+      "strategy": "keyword",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service"
+      ],
+      "usage": {
+        "prompt_eval_count": 80,
+        "prompt_eval_cached_count": 48,
+        "eval_count": 10,
+        "total_duration": 324523208,
+        "load_duration": 4667458
+      },
+      "provider_ms": 329.37,
+      "selected_tool": "it.restart_service",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 382.32
+    },
+    {
+      "role": "it",
+      "strategy": "vector",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service",
+        "it.get_deployment_status",
+        "it.get_system_logs"
+      ],
+      "usage": {
+        "prompt_eval_count": 128,
+        "prompt_eval_cached_count": 66,
+        "eval_count": 10,
+        "total_duration": 383255875,
+        "load_duration": 9244333
+      },
+      "provider_ms": 388.52,
+      "selected_tool": "it.restart_service",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 415.54
+    },
+    {
+      "role": "it",
+      "strategy": "hybrid",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service",
+        "it.get_deployment_status",
+        "it.get_system_logs"
+      ],
+      "usage": {
+        "prompt_eval_count": 128,
+        "prompt_eval_cached_count": 127,
+        "eval_count": 10,
+        "total_duration": 263570375,
+        "load_duration": 1835459
+      },
+      "provider_ms": 266.07,
+      "selected_tool": "it.restart_service",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 300.6
+    },
+    {
+      "role": "hr",
+      "strategy": "full",
+      "expected_tool": "hr.get_leave_balance",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "communication.notify_leave",
+        "hr.get_company_policy",
+        "hr.get_department",
+        "hr.get_employee",
+        "hr.get_leave_balance",
+        "hr.get_manager",
+        "hr.request_leave"
+      ],
+      "usage": {
+        "prompt_eval_count": 1768,
+        "prompt_eval_cached_count": 40,
+        "eval_count": 10,
+        "total_duration": 4809332417,
+        "load_duration": 2754708
+      },
+      "provider_ms": 5185.59,
+      "selected_tool": "hr.get_employee",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 5229.13
+    },
+    {
+      "role": "hr",
+      "strategy": "keyword",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.get_employee",
+        "communication.notify_leave",
+        "hr.get_manager",
+        "hr.request_leave"
+      ],
+      "usage": {
+        "prompt_eval_count": 174,
+        "prompt_eval_cached_count": 47,
+        "eval_count": 12,
+        "total_duration": 817537291,
+        "load_duration": 93041541
+      },
+      "provider_ms": 964.68,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "54c90795-3ab2-43a5-8a58-e46854477dfc",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 3031.47
+    },
+    {
+      "role": "hr",
+      "strategy": "vector",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.request_leave",
+        "hr.get_employee",
+        "hr.get_manager",
+        "hr.get_company_policy"
+      ],
+      "usage": {
+        "prompt_eval_count": 172,
+        "prompt_eval_cached_count": 74,
+        "eval_count": 12,
+        "total_duration": 983068917,
+        "load_duration": 251194000
+      },
+      "provider_ms": 1158.8,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "efbb9085-50ba-41f2-8b59-2ef1c8ec24a2",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1329.61
+    },
+    {
+      "role": "hr",
+      "strategy": "hybrid",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.get_employee",
+        "hr.request_leave",
+        "hr.get_manager",
+        "communication.notify_leave"
+      ],
+      "usage": {
+        "prompt_eval_count": 174,
+        "prompt_eval_cached_count": 93,
+        "eval_count": 12,
+        "total_duration": 539141666,
+        "load_duration": 11893500
+      },
+      "provider_ms": 547.54,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "db0961b5-b099-4536-995b-5c97e3aaf3da",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 746.98
+    }
+  ]
+}

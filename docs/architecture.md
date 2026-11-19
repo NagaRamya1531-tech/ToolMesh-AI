@@ -344,3 +344,27 @@ flowchart LR
 ```
 
 Support, Finance, IT, and HR run deterministic LangGraph scenarios. The worker persists ordered results and execution references, stops on a failure, and resumes an IT workflow only after a terminal approval outcome. Approved restarts update sandbox state and create an idempotent receipt. HR uses locked allowance updates and rejects overlaps. Analytics reads scoped Payments projections and writes reports into its own schema. [ADR 0006](adr/0006-domain-governance-and-scripted-agents.md)
+
+## Release provider evaluation
+
+The opt-in release runner exchanges synthetic task text and authorized contract metadata with a loopback Ollama process. The authenticated gateway retains enforcement over discovery, schema lookup, and execution.
+
+```mermaid
+sequenceDiagram
+    participant E as Release evaluation runner
+    participant G as Gateway runtime
+    participant M as Local Ollama provider
+    participant D as Domain service
+    E->>G: Discover eligible tools or load visible contracts
+    G-->>E: Approved tool metadata and versions
+    E->>M: Select an eligible tool for the synthetic task
+    M-->>E: Structured selection and usage counters
+    opt Selection matches the labeled read operation
+        E->>G: Invoke pinned version with fixed fixture arguments
+        G->>D: Dispatch scoped call
+        D-->>G: Persisted fixture result
+        G-->>E: Validated result and execution ID
+    end
+```
+
+[Release methodology and evidence](release-validation.md)

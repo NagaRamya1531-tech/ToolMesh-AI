@@ -28,3 +28,7 @@ Profiles impose service ceilings. Explicit denies apply to discovery, schema acc
 ## Operational evidence
 
 Execution status events inherit the same caller, administrator, and approver scope as execution records. PostgreSQL captures events transactionally. The gateway database role can read those events and has no direct event insert, update, or delete privileges. Event rows contain status, safe error codes and timestamps. The gateway assigns request IDs itself. Prometheus labels omit principals, identifiers, arguments and query text. Keep metric scrapers and trace collectors on operator-controlled networks. Restrict the gateway ingress to public application routes if deploying beyond loopback.
+
+## Provider evaluation boundary
+
+The release harness restricts both endpoints to loopback and uses disposable credentials with the same scoped catalog and execution APIs as ordinary agents. Provider input consists of authorized contract metadata and synthetic task descriptions. Fixture arguments and domain results stay within the evaluation client and gateway. The harness dispatches only the expected operation after verifying its published contract is read-only. Exports contain bounded selections, usage counters and execution metadata.
