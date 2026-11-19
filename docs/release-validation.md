@@ -57,3 +57,22 @@ Ollama 0.40.16 ran `gemma:2b` with GPU offload. Token counts are sums over four 
 The ranked strategies succeeded for Finance and HR. All strategies selected the wrong tool for Support and IT. In particular, the ranked IT trials picked the restart tool and the runner stopped before execution. The sample falls short of the 90% task success target and is too small to estimate general model accuracy.
 
 The isolated 100-client burst returned 100 HTTP 200 responses at 166.82 requests per second over 0.60 s. Client p50, p95 and p99 were 331.87, 567.08 and 589.42 ms. This is a single warm discovery burst on the small executable catalog. An earlier burst also returned 100 HTTP 200 responses, after which the gateway timed out before catalog retrieval in all 16 model trials. The rerun restarted Docker Desktop and ran one Compose project at a time. [Isolated results](../benchmarks/results/m7-local-release.json) · [Initial attempt](../benchmarks/results/m7-initial-attempt.json)
+
+## Optional OpenAI comparison
+
+The runner accepts `--openai --model MODEL` for a model that supports Structured Outputs. Set `OPENAI_API_KEY` in the root `.env` or the invoking process environment. OpenAI mode makes up to 16 billable model requests and sends the synthetic task text and scoped tool metadata to the Responses API. The fixed fixture arguments and gateway credentials stay local. The export records the usage object returned by the provider. OpenAI uses its own model defaults, so compare latency and token counts with the provider and settings in mind. The live comparison is recorded below. [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+
+### GPT-5.4 mini follow-up
+
+The pinned `gpt-5.4-mini-2026-03-17` run completed all 16 requests.
+
+| Strategy | Verified reads | Input tokens | Output tokens | Median provider wall time |
+|---|---:|---:|---:|---:|
+| Upfront schemas | 3/4 | 10,009 | 61 | 1,203.68 ms |
+| Keyword | 3/4 | 660 | 67 | 1,078.10 ms |
+| Vector | 3/4 | 708 | 61 | 749.44 ms |
+| Hybrid | 3/4 | 712 | 73 | 1,014.02 ms |
+
+OpenAI verified all Support, Finance, and HR reads. The expected IT health tool was absent from the visible catalog in both provider runs. OpenAI abstained in all four IT trials. All methods therefore verified every available case in the OpenAI run. The historical IT trials measure behavior with a missing tool. The runner now crawls the IT service if its health contract is missing, publishes the fixture contracts, and checks visibility under all four roles before model requests. A corrected provider run is pending.
+
+The provider reported 12,089 input tokens, zero cached input tokens, and 262 output tokens. Estimated inference cost was $0.01025 USD at standard list rates. [Raw OpenAI comparison](../benchmarks/results/m7-openai-comparison.json) · [Model pricing](https://developers.openai.com/api/docs/models/gpt-5.4-mini)

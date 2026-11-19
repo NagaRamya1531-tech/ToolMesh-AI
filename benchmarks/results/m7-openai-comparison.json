@@ -1,0 +1,993 @@
+{
+  "host": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.12.10",
+  "provider": "OpenAI",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "load": {
+    "clients": 100,
+    "warmup": {
+      "outcome": "200",
+      "ms": 31.14
+    },
+    "elapsed_seconds": 0.327190125004563,
+    "requests_per_second": 305.6326959702876,
+    "outcomes": {
+      "200": 100
+    },
+    "p50_ms": 239.39,
+    "p95_ms": 312.53,
+    "p99_ms": 317.44,
+    "samples": [
+      {
+        "outcome": "200",
+        "ms": 139.76
+      },
+      {
+        "outcome": "200",
+        "ms": 143.71
+      },
+      {
+        "outcome": "200",
+        "ms": 143.76
+      },
+      {
+        "outcome": "200",
+        "ms": 146.71
+      },
+      {
+        "outcome": "200",
+        "ms": 146.65
+      },
+      {
+        "outcome": "200",
+        "ms": 152.4
+      },
+      {
+        "outcome": "200",
+        "ms": 155.84
+      },
+      {
+        "outcome": "200",
+        "ms": 159.16
+      },
+      {
+        "outcome": "200",
+        "ms": 226.44
+      },
+      {
+        "outcome": "200",
+        "ms": 166.37
+      },
+      {
+        "outcome": "200",
+        "ms": 168.99
+      },
+      {
+        "outcome": "200",
+        "ms": 168.91
+      },
+      {
+        "outcome": "200",
+        "ms": 169.67
+      },
+      {
+        "outcome": "200",
+        "ms": 173.31
+      },
+      {
+        "outcome": "200",
+        "ms": 174.44
+      },
+      {
+        "outcome": "200",
+        "ms": 176.12
+      },
+      {
+        "outcome": "200",
+        "ms": 177.82
+      },
+      {
+        "outcome": "200",
+        "ms": 181.13
+      },
+      {
+        "outcome": "200",
+        "ms": 182.02
+      },
+      {
+        "outcome": "200",
+        "ms": 183.39
+      },
+      {
+        "outcome": "200",
+        "ms": 184.61
+      },
+      {
+        "outcome": "200",
+        "ms": 186.33
+      },
+      {
+        "outcome": "200",
+        "ms": 187.21
+      },
+      {
+        "outcome": "200",
+        "ms": 193.92
+      },
+      {
+        "outcome": "200",
+        "ms": 193.19
+      },
+      {
+        "outcome": "200",
+        "ms": 196.47
+      },
+      {
+        "outcome": "200",
+        "ms": 197.11
+      },
+      {
+        "outcome": "200",
+        "ms": 199.29
+      },
+      {
+        "outcome": "200",
+        "ms": 201.14
+      },
+      {
+        "outcome": "200",
+        "ms": 201.79
+      },
+      {
+        "outcome": "200",
+        "ms": 202.83
+      },
+      {
+        "outcome": "200",
+        "ms": 204.84
+      },
+      {
+        "outcome": "200",
+        "ms": 207.17
+      },
+      {
+        "outcome": "200",
+        "ms": 209.27
+      },
+      {
+        "outcome": "200",
+        "ms": 209.46
+      },
+      {
+        "outcome": "200",
+        "ms": 161.96
+      },
+      {
+        "outcome": "200",
+        "ms": 212.08
+      },
+      {
+        "outcome": "200",
+        "ms": 211.36
+      },
+      {
+        "outcome": "200",
+        "ms": 214.53
+      },
+      {
+        "outcome": "200",
+        "ms": 216.62
+      },
+      {
+        "outcome": "200",
+        "ms": 219.6
+      },
+      {
+        "outcome": "200",
+        "ms": 221.59
+      },
+      {
+        "outcome": "200",
+        "ms": 224.43
+      },
+      {
+        "outcome": "200",
+        "ms": 225.07
+      },
+      {
+        "outcome": "200",
+        "ms": 229.77
+      },
+      {
+        "outcome": "200",
+        "ms": 230.28
+      },
+      {
+        "outcome": "200",
+        "ms": 232.84
+      },
+      {
+        "outcome": "200",
+        "ms": 233.4
+      },
+      {
+        "outcome": "200",
+        "ms": 239.01
+      },
+      {
+        "outcome": "200",
+        "ms": 239.77
+      },
+      {
+        "outcome": "200",
+        "ms": 235.03
+      },
+      {
+        "outcome": "200",
+        "ms": 242.71
+      },
+      {
+        "outcome": "200",
+        "ms": 247.89
+      },
+      {
+        "outcome": "200",
+        "ms": 247.79
+      },
+      {
+        "outcome": "200",
+        "ms": 253.16
+      },
+      {
+        "outcome": "200",
+        "ms": 248.41
+      },
+      {
+        "outcome": "200",
+        "ms": 254.51
+      },
+      {
+        "outcome": "200",
+        "ms": 250.64
+      },
+      {
+        "outcome": "200",
+        "ms": 258.21
+      },
+      {
+        "outcome": "200",
+        "ms": 263.07
+      },
+      {
+        "outcome": "200",
+        "ms": 262.82
+      },
+      {
+        "outcome": "200",
+        "ms": 263.55
+      },
+      {
+        "outcome": "200",
+        "ms": 265.92
+      },
+      {
+        "outcome": "200",
+        "ms": 269.02
+      },
+      {
+        "outcome": "200",
+        "ms": 269.11
+      },
+      {
+        "outcome": "200",
+        "ms": 270.07
+      },
+      {
+        "outcome": "200",
+        "ms": 271.69
+      },
+      {
+        "outcome": "200",
+        "ms": 273.19
+      },
+      {
+        "outcome": "200",
+        "ms": 274.0
+      },
+      {
+        "outcome": "200",
+        "ms": 277.09
+      },
+      {
+        "outcome": "200",
+        "ms": 279.07
+      },
+      {
+        "outcome": "200",
+        "ms": 277.47
+      },
+      {
+        "outcome": "200",
+        "ms": 280.43
+      },
+      {
+        "outcome": "200",
+        "ms": 301.83
+      },
+      {
+        "outcome": "200",
+        "ms": 283.99
+      },
+      {
+        "outcome": "200",
+        "ms": 291.61
+      },
+      {
+        "outcome": "200",
+        "ms": 287.69
+      },
+      {
+        "outcome": "200",
+        "ms": 293.81
+      },
+      {
+        "outcome": "200",
+        "ms": 282.15
+      },
+      {
+        "outcome": "200",
+        "ms": 286.05
+      },
+      {
+        "outcome": "200",
+        "ms": 289.74
+      },
+      {
+        "outcome": "200",
+        "ms": 294.19
+      },
+      {
+        "outcome": "200",
+        "ms": 296.43
+      },
+      {
+        "outcome": "200",
+        "ms": 297.4
+      },
+      {
+        "outcome": "200",
+        "ms": 300.14
+      },
+      {
+        "outcome": "200",
+        "ms": 301.55
+      },
+      {
+        "outcome": "200",
+        "ms": 302.75
+      },
+      {
+        "outcome": "200",
+        "ms": 304.36
+      },
+      {
+        "outcome": "200",
+        "ms": 305.41
+      },
+      {
+        "outcome": "200",
+        "ms": 307.06
+      },
+      {
+        "outcome": "200",
+        "ms": 308.37
+      },
+      {
+        "outcome": "200",
+        "ms": 310.52
+      },
+      {
+        "outcome": "200",
+        "ms": 309.93
+      },
+      {
+        "outcome": "200",
+        "ms": 311.9
+      },
+      {
+        "outcome": "200",
+        "ms": 312.53
+      },
+      {
+        "outcome": "200",
+        "ms": 313.47
+      },
+      {
+        "outcome": "200",
+        "ms": 316.06
+      },
+      {
+        "outcome": "200",
+        "ms": 319.12
+      },
+      {
+        "outcome": "200",
+        "ms": 317.17
+      },
+      {
+        "outcome": "200",
+        "ms": 317.44
+      }
+    ]
+  },
+  "provider_trials": [
+    {
+      "role": "support",
+      "strategy": "full",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "communication.create_channel",
+        "communication.get_channel_members",
+        "communication.get_message",
+        "communication.search_messages",
+        "communication.send_email",
+        "communication.send_notification",
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_refund_status",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "support.create_ticket",
+        "support.escalate_ticket",
+        "support.get_customer",
+        "support.get_ticket",
+        "support.resolve_ticket",
+        "support.search_tickets",
+        "support.update_ticket"
+      ],
+      "usage": {
+        "input_tokens": 4377,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 4393
+      },
+      "provider_ms": 2842.77,
+      "selected_tool": "payments.check_duplicate_payment",
+      "execution_id": "287b98e0-12df-44df-a905-c1a2ae9e8d82",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 3067.63
+    },
+    {
+      "role": "support",
+      "strategy": "keyword",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "input_tokens": 193,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 209
+      },
+      "provider_ms": 1056.53,
+      "selected_tool": "payments.check_duplicate_payment",
+      "execution_id": "1c95c818-4164-48cd-930b-8babee23711a",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1092.16
+    },
+    {
+      "role": "support",
+      "strategy": "vector",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_transaction",
+        "payments.list_transactions",
+        "payments.get_payment_method",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "input_tokens": 193,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 209
+      },
+      "provider_ms": 734.23,
+      "selected_tool": "payments.check_duplicate_payment",
+      "execution_id": "0cdc4c54-cf72-4a71-bed0-29f6197f0c3a",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 904.42
+    },
+    {
+      "role": "support",
+      "strategy": "hybrid",
+      "expected_tool": "payments.check_duplicate_payment",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "payments.check_duplicate_payment",
+        "payments.get_transaction",
+        "payments.get_payment_method",
+        "payments.list_transactions",
+        "payments.get_refund_status"
+      ],
+      "usage": {
+        "input_tokens": 193,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 22,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 215
+      },
+      "provider_ms": 1093.11,
+      "selected_tool": "payments.check_duplicate_payment",
+      "execution_id": "a5d3fe75-946a-4af9-b1a7-24ae125a6ae3",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1138.57
+    },
+    {
+      "role": "finance",
+      "strategy": "full",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.compare_periods",
+        "analytics.generate_report",
+        "analytics.get_customer_metrics",
+        "analytics.get_daily_revenue",
+        "analytics.get_refund_metrics",
+        "analytics.get_sales_metrics",
+        "payments.check_duplicate_payment",
+        "payments.get_payment_method",
+        "payments.get_refund_status",
+        "payments.get_transaction",
+        "payments.issue_refund",
+        "payments.list_transactions"
+      ],
+      "usage": {
+        "input_tokens": 3119,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 3135
+      },
+      "provider_ms": 1045.77,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "b31ac62e-37b0-4e83-bef8-9289466affec",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1161.01
+    },
+    {
+      "role": "finance",
+      "strategy": "keyword",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.get_daily_revenue",
+        "payments.get_payment_method"
+      ],
+      "usage": {
+        "input_tokens": 190,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 206
+      },
+      "provider_ms": 736.29,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "f2a5c783-d510-4187-8320-6b2e9e21d344",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 810.23
+    },
+    {
+      "role": "finance",
+      "strategy": "vector",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.generate_report",
+        "analytics.compare_periods"
+      ],
+      "usage": {
+        "input_tokens": 188,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 204
+      },
+      "provider_ms": 716.92,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "83d47dca-9c85-40f1-8f06-acbb9a74b273",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 758.69
+    },
+    {
+      "role": "finance",
+      "strategy": "hybrid",
+      "expected_tool": "analytics.get_sales_metrics",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "analytics.get_sales_metrics",
+        "analytics.get_customer_metrics",
+        "analytics.get_refund_metrics",
+        "analytics.get_daily_revenue",
+        "analytics.generate_report"
+      ],
+      "usage": {
+        "input_tokens": 190,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 22,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 212
+      },
+      "provider_ms": 934.93,
+      "selected_tool": "analytics.get_sales_metrics",
+      "execution_id": "28ca5fe2-ace2-4fc2-96e7-6aff55f0f582",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1020.36
+    },
+    {
+      "role": "it",
+      "strategy": "full",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.get_deployment_status",
+        "it.get_system_logs",
+        "it.restart_service"
+      ],
+      "usage": {
+        "input_tokens": 805,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 818
+      },
+      "provider_ms": 1264.28,
+      "selected_tool": "NONE",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 1276.94
+    },
+    {
+      "role": "it",
+      "strategy": "keyword",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service"
+      ],
+      "usage": {
+        "input_tokens": 90,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 19,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 109
+      },
+      "provider_ms": 1100.32,
+      "selected_tool": "NONE",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 1116.25
+    },
+    {
+      "role": "it",
+      "strategy": "vector",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service",
+        "it.get_deployment_status",
+        "it.get_system_logs"
+      ],
+      "usage": {
+        "input_tokens": 142,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 155
+      },
+      "provider_ms": 764.66,
+      "selected_tool": "NONE",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 799.39
+    },
+    {
+      "role": "it",
+      "strategy": "hybrid",
+      "expected_tool": "it.check_service_health",
+      "success": false,
+      "phase": "provider",
+      "eligible_tools": [
+        "it.restart_service",
+        "it.get_deployment_status",
+        "it.get_system_logs"
+      ],
+      "usage": {
+        "input_tokens": 142,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 155
+      },
+      "provider_ms": 881.11,
+      "selected_tool": "NONE",
+      "outcome": "NO_CORRECT_SELECTION",
+      "wall_ms": 924.47
+    },
+    {
+      "role": "hr",
+      "strategy": "full",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "communication.notify_leave",
+        "hr.get_company_policy",
+        "hr.get_department",
+        "hr.get_employee",
+        "hr.get_leave_balance",
+        "hr.get_manager",
+        "hr.request_leave"
+      ],
+      "usage": {
+        "input_tokens": 1708,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1724
+      },
+      "provider_ms": 1143.08,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "0fe84b69-54d2-44dd-ac93-6a155b9de0d2",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1271.67
+    },
+    {
+      "role": "hr",
+      "strategy": "keyword",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.get_employee",
+        "communication.notify_leave",
+        "hr.get_manager",
+        "hr.request_leave"
+      ],
+      "usage": {
+        "input_tokens": 187,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 203
+      },
+      "provider_ms": 1099.67,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "22417bbe-2198-4c05-902c-b7108ba8217d",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1137.86
+    },
+    {
+      "role": "hr",
+      "strategy": "vector",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.request_leave",
+        "hr.get_employee",
+        "hr.get_manager",
+        "hr.get_company_policy"
+      ],
+      "usage": {
+        "input_tokens": 185,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 201
+      },
+      "provider_ms": 850.14,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "eed9d509-72ae-4ce4-a9b5-035d0a501a81",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 900.02
+    },
+    {
+      "role": "hr",
+      "strategy": "hybrid",
+      "expected_tool": "hr.get_leave_balance",
+      "success": true,
+      "phase": "execution",
+      "eligible_tools": [
+        "hr.get_leave_balance",
+        "hr.get_employee",
+        "hr.request_leave",
+        "hr.get_manager",
+        "communication.notify_leave"
+      ],
+      "usage": {
+        "input_tokens": 187,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cache_write_tokens_details": {
+            "ttl_12h_tokens": 0,
+            "ttl_30m_tokens": 0
+          },
+          "cached_tokens": 0
+        },
+        "output_tokens": 16,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 203
+      },
+      "provider_ms": 1395.24,
+      "selected_tool": "hr.get_leave_balance",
+      "execution_id": "b977aec0-ce07-406a-a782-2876e22b9cd8",
+      "outcome": "SUCCEEDED",
+      "wall_ms": 1469.45
+    }
+  ]
+}

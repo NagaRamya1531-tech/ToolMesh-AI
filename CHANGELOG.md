@@ -6,6 +6,8 @@
 - Published a held-out 1,000-definition retrieval run, four model tasks per strategy, and a 100-client authenticated discovery burst. Hybrid Recall@5 was 94.4%, ranked model trials verified two of four tasks per strategy, and the burst returned 100 HTTP 200 responses. [Method, raw evidence and limitations](docs/release-validation.md)
 - Updated the demo, README, security and architecture notes, ADRs and a real console evaluation screenshot.
 
+The OpenAI follow-up completed 16 GPT-5.4 mini requests for an estimated $0.01025. It verified three reads per strategy and abstained on the missing IT operation. The runner now crawls and verifies the scoped catalog before making provider requests. The corrected IT read was verified through gRPC. [Follow-up results](docs/release-validation.md#optional-openai-comparison)
+
 ### Verification
 
 - Built and bootstrapped a fresh clone, repeated migration `0009`, and exercised REST, MCP and gRPC against real dependencies. Eleven Chromium checks passed, including keyboard operation and axe checks at the documented viewport sizes.
