@@ -1,5 +1,11 @@
 # Changelog
 
+## M9.1.1 · Protected execution contracts and schema
+
+- Added typed Slice A persistence contracts and additive PostgreSQL revision `0010`. The gate remains in LEGACY mode and the new runtime dispatch path remains disabled.
+- Preserved legacy approval and execution history and the existing status trigger. The readiness check accepts both compatible schema revisions.
+- Passed 46 focused contract and migration tests, 29 Python Compose checks (25 existing and four contract tests), and 14 Chromium checks. Ruff, mypy, frontend build and Git whitespace checks passed. [Schema, test commands and limitations](docs/architecture/M9_1_1_SCHEMA_IMPLEMENTATION.md)
+
 ## M8 · OpenAI Playground and architecture refresh
 
 - Extended the console redesign to all sidebar destinations. Added section headers, status labels, responsive record inspectors, and side-by-side setup and history for Agents and Evaluations. Browser coverage verified route controls, selected-record highlighting, and the mobile drawer. The mobile Registry overflow found on the first pass was corrected.
