@@ -46,6 +46,13 @@ A support agent investigating a duplicate charge needs payment records and a sup
 
 ToolMesh puts those decisions in one gateway. An agent discovers the operations its identity can see, fetches the published schema when needed, and invokes a pinned version. The gateway checks access and arguments before dispatch. Approval and execution records let an operator see who requested an action, which version ran, and whether a receipt confirmed the outcome.
 
+| Integration challenge | Gateway response |
+|---|---|
+| Large tool catalogs add model context | Retrieve eligible candidates first, then fetch the chosen schema. |
+| Services use different protocols and release independently | Keep a published contract catalog and route through REST, MCP, and gRPC adapters. |
+| Calls cross permission boundaries | Enforce current grants, object scope, quotas, and independent approval for protected writes. |
+| A write may commit before the caller receives a response | Preserve the execution state and reconcile approval-gated writes against the downstream receipt. |
+
 ## Architecture
 
 The control and data planes run in one FastAPI and FastMCP process. PostgreSQL coordinates catalog, approval, and execution state. Domain containers have separate PostgreSQL schemas and logins. The optional OpenAI path works through the same runtime boundary.
@@ -131,7 +138,7 @@ flowchart LR
 
 ### Agent discovery
 
-MCP clients discover eligible services and tools before requesting an individual schema. The schema lookup checks the current scope and active version again.
+MCP clients discover eligible services and tools before requesting an individual schema. The schema lookup checks the current scope and active version again. The gateway exposes four meta-tools: `discover_server`, `discover_tools`, `get_tool_schema`, and `invoke_tool`.
 
 ```mermaid
 sequenceDiagram
