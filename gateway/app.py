@@ -130,7 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) IN (ARRAY['0009']::varchar[], ARRAY['0010']::varchar[])"
+                    "FROM alembic_version) IN (ARRAY['0009']::varchar[], ARRAY['0010']::varchar[], ARRAY['0011']::varchar[])"
                 )
             )
             return all(result.one())

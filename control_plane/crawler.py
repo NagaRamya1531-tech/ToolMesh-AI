@@ -8,6 +8,7 @@ from jsonschema.exceptions import SchemaError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from control_plane.sources import Target, fetch, simple_object
+from shared.authorization_revision import guard_authorization_write
 from shared.contracts import TOOLS, tool_contract
 from shared.database import execute, rows
 
@@ -163,6 +164,7 @@ class Crawler:
                 )
             return
         async with self.db.begin() as conn:
+            await guard_authorization_write(conn)
             current = await rows(
                 conn,
                 "SELECT id FROM crawl_jobs WHERE id=:id AND started_at=:lease FOR UPDATE",

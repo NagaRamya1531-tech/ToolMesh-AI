@@ -100,6 +100,42 @@ def canonical_arguments(contract: dict, arguments: dict) -> bytes:
         raise CommandStoreError("INVALID_ARGUMENT") from None
 
 
+async def lock_durable_coordination(conn: AsyncConnection) -> int:
+    """Acquire the gate before the authorization guard and require both rows."""
+    gate = await rows(
+        conn, "SELECT mode FROM execution_dispatch_gate WHERE singleton FOR SHARE"
+    )
+    guard = await rows(
+        conn,
+        "SELECT revision FROM execution_authorization_guard WHERE singleton FOR SHARE",
+    )
+    if not gate or not guard:
+        raise CommandStoreError("EXECUTION_COORDINATION_UNAVAILABLE")
+    if gate[0]["mode"] != "DURABLE":
+        raise CommandStoreError("DURABLE_ADMISSION_DISABLED")
+    return int(guard[0]["revision"])
+
+
+def protected_intent_digest(
+    digests: CommandDigests,
+    scope: ProtectedIntentScope,
+    version: int,
+    contract_digest: bytes,
+    arguments: bytes,
+) -> bytes:
+    return digests.intent(
+        canonical_json(
+            [
+                CANONICALIZER_VERSION,
+                scope.model_dump(),
+                version,
+                contract_digest.hex(),
+                arguments.decode(),
+            ]
+        )
+    )
+
+
 class CommandStore:
     def __init__(
         self, db: AsyncEngine, payloads: PayloadProtection, digests: CommandDigests
@@ -195,17 +231,7 @@ class CommandStore:
         self, conn: AsyncConnection, request: CommandSubmission, *, allow_insert: bool
     ) -> StoredSubmission:
         await execute(conn, "SET LOCAL lock_timeout = '2s'")
-        gate = await rows(
-            conn, "SELECT mode FROM execution_dispatch_gate WHERE singleton FOR SHARE"
-        )
-        guard = await rows(
-            conn,
-            "SELECT revision FROM execution_authorization_guard WHERE singleton FOR SHARE",
-        )
-        if not gate or not guard:
-            raise CommandStoreError("EXECUTION_COORDINATION_UNAVAILABLE")
-        if gate[0]["mode"] != "DURABLE":
-            raise CommandStoreError("DURABLE_ADMISSION_DISABLED")
+        await lock_durable_coordination(conn)
 
         principal = await resolve_principal(conn, request.requester)
         if principal is None or not object_allowed(principal, request.arguments):
@@ -297,16 +323,8 @@ class CommandStore:
         ):
             raise CommandStoreError("INVALID_ARGUMENT")
         contract_digest = sha256(canonical_json(contract)).digest()
-        intent_digest = self._digests.intent(
-            canonical_json(
-                [
-                    CANONICALIZER_VERSION,
-                    scope.model_dump(),
-                    version,
-                    contract_digest.hex(),
-                    arguments.decode(),
-                ]
-            )
+        intent_digest = protected_intent_digest(
+            self._digests, scope, version, contract_digest, arguments
         )
         if prior:
             if (

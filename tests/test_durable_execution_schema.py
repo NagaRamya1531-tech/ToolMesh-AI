@@ -143,7 +143,7 @@ def sandbox(request):
             assert [len(rows) for rows in before] == [2, 2, 4, 2]
         else:
             before = None
-        migrate(env, "upgrade", "head")
+        migrate(env, "upgrade", "0010")
         if before is None:
             asyncio.run(seed_history(url))
         yield url, env, before

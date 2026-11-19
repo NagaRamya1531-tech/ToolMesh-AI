@@ -12,6 +12,7 @@ from gateway.access import object_allowed
 from gateway.approvals import event
 from gateway.identity import Identity, digest, resolve_principal
 from gateway.runtime import Runtime
+from shared.authorization_revision import guard_authorization_write
 from shared.database import execute, rows
 
 Key = Annotated[str, StringConstraints(min_length=1, max_length=128)]
@@ -78,6 +79,7 @@ def build_governance(identity: Identity, runtime: Runtime):
         credential = token_urlsafe(32)
         try:
             async with db.begin() as conn:
+                await guard_authorization_write(conn)
                 await execute(
                     conn,
                     "INSERT INTO agent_accounts(id,profile,credential_hash) VALUES (:id,:profile,:hash)",
@@ -92,6 +94,7 @@ def build_governance(identity: Identity, runtime: Runtime):
     @router.patch("/agents/{agent_id}")
     async def update_agent(agent_id: Key, body: AgentUpdate, _=Depends(admin)):
         async with db.begin() as conn:
+            await guard_authorization_write(conn)
             result = await rows(
                 conn,
                 "UPDATE agent_accounts SET enabled=:enabled WHERE id=:id RETURNING id,profile,enabled,origin",
@@ -128,6 +131,7 @@ def build_governance(identity: Identity, runtime: Runtime):
         ident = uuid4()
         try:
             async with db.begin() as conn:
+                await guard_authorization_write(conn)
                 agent = await resolve_principal(conn, body.principal)
                 tool = await rows(
                     conn, "SELECT service_id FROM tools WHERE id=:id", id=body.tool_id
@@ -165,6 +169,7 @@ def build_governance(identity: Identity, runtime: Runtime):
     @router.patch("/policies/{policy_id}")
     async def update_policy(policy_id: UUID, body: PolicyUpdate, actor=Depends(admin)):
         async with db.begin() as conn:
+            await guard_authorization_write(conn)
             result = await rows(
                 conn,
                 "UPDATE policy_rules SET enabled=:enabled,version=version+1 WHERE id=:id AND version=:version RETURNING version",

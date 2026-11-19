@@ -1,5 +1,11 @@
 # Changelog
 
+## M9.1.3 · Atomic protected approval and admission
+
+- Added scoped human approval, rejection, and expiry transactions for protected sandbox tools. Decisions verify the sealed intent and pinned contract, record an encrypted reason and authorization revision, and atomically update command state, execution status, and audit evidence.
+- Added revision 0011 to coordinate authorization writers. Legacy approval paths skip protected records. The protected service has no public route or dispatcher. [Architecture](docs/architecture.md#atomic-protected-approval)
+- The full Python suite passed 175 of 177 tests, including all 33 new approval cases. The two remaining cases passed on a fresh rerun after the IT gRPC probe succeeded. Chromium passed all 14 checks on a fresh single-worker rerun after earlier login and readiness failures. Ruff, mypy, frontend build, and Git whitespace checks passed. Disposable stacks reported revision 0011, gate LEGACY, and zero durable commands and attempts.
+
 ## M9.1.2 · Command store and payload protection
 
 - Added an isolated PostgreSQL command store for sandbox refunds and IT restarts, with pinned-version idempotency, atomic writes, and lookup-only recovery after an ambiguous commit. Missing coordination rows block admission.

@@ -20,7 +20,7 @@ ToolMesh connects REST, MCP, and gRPC services to a versioned tool catalog. Agen
 
 *The local operations console shows the request path, live dependency health, and recorded sandbox outcomes.*
 
-**Current scope:** Local Docker Compose sandbox with active capabilities through M8. M9.1.1 and M9.1.2 add protected-execution storage for future integration. Payments, restarts, and notifications use synthetic records.
+**Current scope:** Local Docker Compose sandbox with active capabilities through M8. M9.1.1–M9.1.3 add protected-execution storage and approval transactions for future integration. Payments, restarts, and notifications use synthetic records.
 
 ## Contents
 
@@ -499,6 +499,7 @@ ToolMesh-AI/
 | M8 | Optional read-only OpenAI Playground and console refresh | Implemented |
 | M9.1.1 | Slice A contracts and additive PostgreSQL schema for protected execution | Schema implemented. Durable dispatch remains disabled. |
 | M9.1.2 | Protected command store, scoped idempotency, and authenticated payload envelopes | Store verified in isolated tests. Gateway integration awaits a later milestone. |
+| M9.1.3 | Atomic protected decisions and authorization revision coordination | Internal approval service. Durable dispatch remains disabled. |
 | Future | Autonomous multi-step model workflows, production identity, tenant isolation, high availability | Planned |
 
 [Changelog](CHANGELOG.md) · [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0)

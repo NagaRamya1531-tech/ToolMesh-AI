@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from gateway.access import POLICY, scope_params
 from gateway.identity import Principal
+from shared.authorization_revision import guard_authorization_write
 from shared.database import execute, rows
 
 
@@ -57,6 +58,7 @@ class Catalog:
         if not principal.can_publish:
             raise HTTPException(403, "FORBIDDEN")
         async with self.db.begin() as conn:
+            await guard_authorization_write(conn)
             locked = await rows(
                 conn,
                 "SELECT active_version,lifecycle FROM tools WHERE id=:id FOR UPDATE",

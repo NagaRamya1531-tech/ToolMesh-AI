@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from gateway.access import POLICY, object_allowed, scope_params
 from gateway.identity import Principal, resolve_principal
 from gateway.telemetry import Telemetry
+from shared.authorization_revision import legacy_approval_only
 from shared.contracts import Refund, tool_contract
 from shared.database import execute, rows
 from shared.domain_contracts import RestartResult
@@ -153,8 +154,10 @@ class Approvals:
             expired = await rows(
                 conn,
                 """
-                UPDATE approvals SET status='EXPIRED' WHERE status='PENDING' AND expires_at <= now() RETURNING id,tool_id
-            """,
+                UPDATE approvals a SET status='EXPIRED' WHERE status='PENDING' AND expires_at <= now()
+            """
+                + await legacy_approval_only(conn)
+                + " RETURNING id,tool_id",
             )
             for row in expired:
                 await execute(
@@ -186,8 +189,9 @@ class Approvals:
                     (a.arguments->>'amount_minor')::int AS amount_minor,a.arguments->>'currency' AS currency
                 FROM approvals a JOIN executions e ON e.id=a.id
                 WHERE a.customer_id=:customer AND (a.requester=:requester OR :reviewer)
-                ORDER BY requested_at DESC,id LIMIT 100
-            """,
+            """
+                + await legacy_approval_only(conn)
+                + " ORDER BY requested_at DESC,id LIMIT 100",
                 customer=principal.customer,
                 requester=principal.id,
                 reviewer=principal.can_approve or principal.can_publish,
@@ -203,9 +207,11 @@ class Approvals:
             values = await rows(
                 conn,
                 """
-                SELECT *, expires_at > now() AS current FROM approvals
-                WHERE id=:id AND customer_id=:customer FOR UPDATE
-            """,
+                SELECT *, expires_at > now() AS current FROM approvals a
+                WHERE id=:id AND customer_id=:customer
+            """
+                + await legacy_approval_only(conn)
+                + " FOR UPDATE",
                 id=approval_id,
                 customer=principal.customer,
             )
@@ -336,8 +342,9 @@ class Approvals:
                 """
                 SELECT a.id,a.tool_id,a.arguments,a.customer_id FROM approvals a JOIN executions e ON e.id=a.id
                 WHERE a.status='APPROVED' AND e.status IN ('RUNNING','UNKNOWN') AND a.reconcile_after<=now()
-                ORDER BY a.reconcile_after LIMIT 10 FOR UPDATE OF a SKIP LOCKED
-            """,
+            """
+                + await legacy_approval_only(conn)
+                + " ORDER BY a.reconcile_after LIMIT 10 FOR UPDATE OF a SKIP LOCKED",
             )
             for item in candidates:
                 await execute(

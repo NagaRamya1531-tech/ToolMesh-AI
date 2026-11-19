@@ -290,6 +290,14 @@ Payloads use AES-256-GCM with independently generated data keys and nonces. Asso
 
 The running gateway does not use this store. Existing application privileges and dispatch behavior are unchanged. Integration requires an authenticated caller, scoped runtime grants, shared digest key custody across replicas, guarded policy writers, and legacy cutover. Digest-key rotation, downstream deduplication, and automatic replay remain outside this slice. [Store](../gateway/execution_store.py) · [Payload protection](../gateway/execution_crypto.py) · [PostgreSQL tests](../tests/test_execution_store.py)
 
+## Atomic protected approval
+
+M9.1.3 adds an internal decision service for the two protected tools. It locks the dispatch gate, authorization revision, catalog, key reservation, execution, approval, and command in that order. It requires a separate human with a current customer/tool entitlement, authenticates the sealed intent, and checks the pinned catalog contract and keyed intent digest. Approval also requires the requester's current scope and active version. Rejection can close a valid pending intent after requester authorization is revoked.
+
+An approval moves the command to READY and projects RUNNING for execution status. Approval, execution, command, revision evidence, encrypted reason, and audit data commit together. Rejection and expiration have terminal projections. The database clock determines expiry after lock waits and a caller-configured positive window determines the latest allowable send. A same-actor retry with the same decision and reason returns the original decision. Missing coordination or crypto keys prevent a human decision. System expiry can safely close an overdue pending command using metadata alone.
+
+Revision 0011 adds statement-level guards for account, policy, refund grant, entitlement, and catalog mutations. Catalog and crawler callers take the guard before their row locks. Existing legacy paths skip command-backed approvals. The protected service has no public route or dispatcher, and the deployed gate remains disabled. A future worker must recheck current authorization and the deadline before sending. Legacy cutover still requires quiescing old binaries. [Decision service](../gateway/execution_approval.py) · [Migration](../db/migrations/versions/0011_atomic_execution_approval.py)
+
 ## Failure recovery
 
 ```mermaid
