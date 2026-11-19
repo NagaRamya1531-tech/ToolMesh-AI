@@ -28,7 +28,7 @@ The first Compose boot exposed an exact-0009 readiness check. The query now acce
 
 ## Verification
 
-The final run passed 46 focused tests (four contract and 42 database tests), 29 Python Compose tests (25 existing and four contract tests), and 14 Chromium tests. The Python Compose run had no skips. Ruff lint and formatting, mypy, and the frontend production build passed. Vite reported dependency module-directive warnings while bundling. No live provider calls were made. Both regression stacks reported revision 0010, gate LEGACY, and zero commands after the suites.
+The initial implementation run passed 46 focused tests (four contract and 42 database tests), 29 Python Compose tests (25 existing and four contract tests), and 14 Chromium tests. The Python Compose run had no skips. Ruff lint and formatting, mypy, and the frontend production build passed. Vite reported dependency module-directive warnings while bundling. No live provider calls were made. Both regression stacks reported revision 0010, gate LEGACY, and zero commands after the suites.
 
 The migration tests provision separate PostgreSQL containers for a fresh installation and an upgrade from 0009 with seeded history. The upgrade compares two execution rows, two approval rows, four execution status events and two audit rows before and after migration. SQL checks cover uniqueness, key alias binding, state validity, verification restrictions, receipt outcome matching, foreign keys and guarded downgrade. [Migration tests](../../tests/test_durable_execution_schema.py) · [Contract tests](../../tests/test_execution_contracts.py)
 
@@ -57,3 +57,39 @@ git diff --check
 ```
 
 Release gates include key custody, retention, live ownership transfer and adapter conformance under overlapping requests. Migration tests verify schema behavior in disposable instances. They do not establish runtime fencing, encrypted payload safety or downstream replay guarantees.
+
+## Independent review hardening
+
+The review adds tests only. Migration 0010, the execution contracts, and runtime behavior are unchanged.
+
+- Checked effective access as `toolmesh_app` using PostgreSQL privilege predicates, which include inherited and PUBLIC grants. All eight new tables deny SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER. Also checked SELECT, INSERT, UPDATE and REFERENCES at column level. The role retained SELECT on legacy execution events.
+- Exercised accepted command and key bindings for both protected operations. Checked unsupported tools, a missing catalog version even when legacy approval data matches it, and cross-tool use of an approval.
+- Checked duplicate and false singleton keys, privileged deletion, incomplete command and receipt envelopes, invalid nonces and key versions, unpaired lease fields, zero-generation ownership, leases on terminal states, and a verification-only sendable state. Retained the existing tests for receipts before attempt completion and receipt outcome mismatches.
+- Verified successful downgrade removes all eight tables and returns the database to 0009. Verified downgrade refusal for a populated ledger and for an empty ledger with a PAUSED or missing gate. Each refusal preserved revision 0010, all ledger tables, and legacy history. Gate mutation was confined to disposable test databases and restored to LEGACY.
+
+The singleton constraints enforce at most one row. A privileged database owner can remove the seeded guard or gate. Missing gate blocks downgrade. Future runtime admission must also fail closed when either coordination row is absent. The envelope checks establish storage shape only. [Database tests](../../tests/test_durable_execution_schema.py) · [Migration](../../db/migrations/versions/0010_durable_execution_schema.py)
+
+### Review verification commands
+
+The focused run passed 80 cases, including four contract cases and 38 PostgreSQL cases on each of the fresh and upgraded databases. The full Python run passed 105 tests with zero skips. Ruff lint and formatting, mypy, and the production build passed. Vite emitted the existing dependency module-directive warnings.
+
+The first Chromium run had 13 passes and one failure. The policy simulation endpoint returned HTTP 500 and the expected status did not render. All 14 cases passed on a fresh disposable stack. The initial failure did not reproduce, and its cause remains unconfirmed. Both review Compose databases reported revision 0010, gate LEGACY, and zero durable commands. Durable dispatch remains disabled.
+
+```sh
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-auditpy-postgres uv run --locked pytest -q tests/test_execution_contracts.py tests/test_durable_execution_schema.py
+API_PORT=18161 WEB_PORT=15161 TOOLMESH_OPENAI_API_KEY= TOOLMESH_OTLP_TRACES_ENDPOINT= docker compose --env-file .env.example -p toolmesh-m911-hardening-py up --build -d --wait
+API_PORT=18162 WEB_PORT=15162 TOOLMESH_OPENAI_API_KEY= TOOLMESH_OTLP_TRACES_ENDPOINT= docker compose --env-file .env.example -p toolmesh-m911-hardening-web up --build -d --wait
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-auditpy-postgres TOOLMESH_TEST_API=http://127.0.0.1:18161 TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-m911-hardening-py uv run --locked pytest -q -rs
+export TOOLMESH_TEST_WEB=http://127.0.0.1:15162
+TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts provider.spec.ts sidebar.spec.ts
+npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
+npm --prefix apps/web run test:e2e -- evaluations.spec.ts
+npm --prefix apps/web run test:e2e -- access.spec.ts
+# Before the browser rerun, remove only the disposable browser sandbox and repeat its setup and test commands.
+API_PORT=18162 WEB_PORT=15162 TOOLMESH_OPENAI_API_KEY= TOOLMESH_OTLP_TRACES_ENDPOINT= docker compose --env-file .env.example -p toolmesh-m911-hardening-web down --volumes
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked mypy gateway control_plane shared services benchmarks
+npm --prefix apps/web run build
+git diff --check
+```

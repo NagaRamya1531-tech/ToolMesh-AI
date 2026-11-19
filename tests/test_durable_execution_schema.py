@@ -20,6 +20,16 @@ SECOND = "450c2cfd-87f9-4198-9f10-c726534763b6"
 WORKER = "6ea448c6-4cca-4956-a5f0-9ceef770486a"
 SCOPE = "'default','finance-agent','C-102','payments.issue_refund',1"
 DIGEST = "decode(repeat('ab', 32), 'hex')"
+LEDGER_TABLES = (
+    "execution_commands",
+    "execution_request_keys",
+    "execution_legacy_key_aliases",
+    "execution_attempts",
+    "execution_receipts",
+    "execution_approval_entitlements",
+    "execution_authorization_guard",
+    "execution_dispatch_gate",
+)
 COMMAND = f"""
     INSERT INTO execution_commands (
         execution_id, workspace_id, requester, customer_id, tool_id, tool_version,
@@ -214,9 +224,6 @@ def test_install_preserves_history_and_leaves_dispatch_legacy(sandbox):
                 "execution_receipts",
             ):
                 assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 0
-            assert not await conn.fetchval(
-                "SELECT has_table_privilege('toolmesh_app', 'execution_commands', 'INSERT')"
-            )
             assert (
                 await conn.fetchval(
                     "SELECT count(*) FROM pg_indexes WHERE indexname IN "
@@ -336,21 +343,53 @@ def test_schema_constraints(sandbox, setup, statement, error):
     asyncio.run(check())
 
 
+async def execute_in_sandbox(url, sql, *args):
+    conn = await asyncpg.connect(url)
+    try:
+        await conn.execute(sql, *args)
+    finally:
+        await conn.close()
+
+
+async def assert_schema(url, revision, *, gate=None, commands=0):
+    conn = await asyncpg.connect(url)
+    try:
+        assert (
+            await conn.fetchval("SELECT version_num FROM alembic_version") == revision
+        )
+        for table in LEDGER_TABLES:
+            exists = await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", table)
+            assert exists == (revision == "0010"), table
+        if revision == "0010":
+            assert (
+                await conn.fetchval("SELECT mode FROM execution_dispatch_gate") == gate
+            )
+            assert (
+                await conn.fetchval(
+                    "SELECT revision FROM execution_authorization_guard"
+                )
+                == 1
+            )
+            assert (
+                await conn.fetchval("SELECT count(*) FROM execution_commands")
+                == commands
+            )
+            assert (
+                await conn.fetchval("SELECT count(*) FROM execution_request_keys") == 0
+            )
+    finally:
+        await conn.close()
+
+
 def test_downgrade_preserves_baseline_and_refuses_populated_ledger(sandbox):
     url, env, _ = sandbox
     before = asyncio.run(snapshot(url))
     migrate(env, "downgrade", "0009")
+    asyncio.run(assert_schema(url, "0009"))
     assert asyncio.run(snapshot(url)) == before
     migrate(env, "upgrade", "0010")
 
-    async def change(sql):
-        conn = await asyncpg.connect(url)
-        try:
-            await conn.execute(sql)
-        finally:
-            await conn.close()
-
-    asyncio.run(change(COMMAND))
+    asyncio.run(execute_in_sandbox(url, COMMAND))
     try:
         result = migrate(env, "downgrade", "0009", check=False)
         assert result.returncode != 0
@@ -358,8 +397,260 @@ def test_downgrade_preserves_baseline_and_refuses_populated_ledger(sandbox):
             "Cannot downgrade a transferred or populated durable execution ledger"
             in result.stderr
         )
+        asyncio.run(assert_schema(url, "0010", gate="LEGACY", commands=1))
         assert asyncio.run(snapshot(url)) == before
     finally:
         asyncio.run(
-            change(f"DELETE FROM execution_commands WHERE execution_id='{EXECUTION}'")
+            execute_in_sandbox(
+                url, f"DELETE FROM execution_commands WHERE execution_id='{EXECUTION}'"
+            )
         )
+
+
+def test_gateway_has_no_effective_ledger_privileges(sandbox):
+    url, _, _ = sandbox
+
+    async def check():
+        conn = await asyncpg.connect(url)
+        try:
+            await conn.execute("SET ROLE toolmesh_app")
+            assert await conn.fetchval("SELECT current_user") == "toolmesh_app"
+            for table in LEDGER_TABLES:
+                qualified = f"public.{table}"
+                # These predicates include PUBLIC and inherited grants.
+                for privilege in (
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE",
+                    "TRUNCATE",
+                    "REFERENCES",
+                    "TRIGGER",
+                ):
+                    assert not await conn.fetchval(
+                        "SELECT has_table_privilege(current_user, $1, $2)",
+                        qualified,
+                        privilege,
+                    ), (table, privilege)
+                for privilege in ("SELECT", "INSERT", "UPDATE", "REFERENCES"):
+                    assert not await conn.fetchval(
+                        "SELECT has_any_column_privilege(current_user, $1, $2)",
+                        qualified,
+                        privilege,
+                    ), (table, privilege, "column grant")
+            assert await conn.fetchval(
+                "SELECT has_table_privilege(current_user, 'public.execution_events', 'SELECT')"
+            )
+        finally:
+            await conn.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "tool,requester,other",
+    [
+        ("payments.issue_refund", "finance-agent", "it.restart_service"),
+        ("it.restart_service", "it-agent", "payments.issue_refund"),
+    ],
+)
+def test_protected_tool_binding(sandbox, tool, requester, other):
+    url, _, _ = sandbox
+
+    async def check():
+        conn = await asyncpg.connect(url)
+        execution = uuid4()
+        try:
+            tx = conn.transaction()
+            await tx.start()
+            try:
+                await conn.execute(
+                    "INSERT INTO executions (id, principal, tool_id, version, status) "
+                    "VALUES ($1,$2,$3,1,'PENDING_APPROVAL')",
+                    execution,
+                    requester,
+                    tool,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO approvals (
+                        id, requester, customer_id, tool_id, version, arguments,
+                        intent_hash, request_key, status
+                    ) VALUES ($1,$2,'C-102',$3,1,'{}','synthetic','tool-binding','PENDING')
+                    """,
+                    execution,
+                    requester,
+                    tool,
+                )
+                command = """
+                    INSERT INTO execution_commands (
+                        execution_id, workspace_id, requester, customer_id, tool_id,
+                        tool_version, contract_digest, state
+                    ) VALUES ($1,'default',$2,'C-102',$3,$4,decode(repeat('ab',32),'hex'),'UNKNOWN')
+                    RETURNING tool_id, tool_version
+                """
+                with pytest.raises(asyncpg.CheckViolationError):
+                    async with conn.transaction():
+                        await conn.fetchrow(
+                            command, execution, requester, "support.create_ticket", 1
+                        )
+                with pytest.raises(asyncpg.ForeignKeyViolationError) as mismatch:
+                    async with conn.transaction():
+                        await conn.fetchrow(command, execution, requester, other, 1)
+                assert "requester_tool_id" in mismatch.value.constraint_name
+
+                # Legacy approvals can store a nonexistent version. Match that row to
+                # exercise the catalog FK separately from the approval-binding FK.
+                with pytest.raises(asyncpg.ForeignKeyViolationError) as version:
+                    async with conn.transaction():
+                        await conn.execute(
+                            "UPDATE approvals SET version=999 WHERE id=$1", execution
+                        )
+                        await conn.fetchrow(command, execution, requester, tool, 999)
+                assert (
+                    version.value.constraint_name
+                    == "execution_commands_tool_id_tool_version_fkey"
+                )
+
+                accepted = await conn.fetchrow(command, execution, requester, tool, 1)
+                assert tuple(accepted) == (tool, 1)
+                await conn.execute(
+                    """
+                    INSERT INTO execution_request_keys (
+                        execution_id, workspace_id, requester, customer_id, tool_id,
+                        tool_version, key_digest, intent_digest, digest_key_version,
+                        canonicalizer_version
+                    ) VALUES ($1,'default',$2,'C-102',$3,1,decode(repeat('ab',32),'hex'),
+                        decode(repeat('cd',32),'hex'),1,1)
+                    """,
+                    execution,
+                    requester,
+                    tool,
+                )
+            finally:
+                await tx.rollback()
+        finally:
+            await conn.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "table", ["execution_authorization_guard", "execution_dispatch_gate"]
+)
+def test_singleton_seed_and_duplicate_constraints(sandbox, table):
+    url, _, _ = sandbox
+
+    async def check():
+        conn = await asyncpg.connect(url)
+        try:
+            assert await conn.fetch(f"SELECT singleton FROM {table}") == [(True,)]
+            with pytest.raises(asyncpg.UniqueViolationError):
+                await conn.execute(f"INSERT INTO {table} DEFAULT VALUES")
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute(f"INSERT INTO {table} (singleton) VALUES (false)")
+            tx = conn.transaction()
+            await tx.start()
+            try:
+                await conn.execute(f"DELETE FROM {table}")
+                # A singleton key bounds cardinality above, not below. Only a
+                # privileged test connection can remove the seeded record.
+                assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 0
+            finally:
+                await tx.rollback()
+            assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 1
+        finally:
+            await conn.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    ("table", "change"),
+    [
+        ("execution_commands", "ciphertext = decode('ab','hex')"),
+        ("execution_commands", "nonce = decode('ab','hex')"),
+        ("execution_commands", "lease_owner = NULL"),
+        ("execution_commands", "lease_expires_at = NULL"),
+        ("execution_commands", "generation = 0"),
+        ("execution_commands", "state = 'SUCCEEDED'"),
+        ("execution_commands", "verification_only = true"),
+        ("execution_receipts", "wrapped_data_key = NULL"),
+        ("execution_receipts", "nonce = decode('ab','hex')"),
+        ("execution_receipts", "key_version = 0"),
+    ],
+)
+def test_ledger_row_boundaries(sandbox, table, change):
+    url, _, _ = sandbox
+
+    async def check():
+        conn = await asyncpg.connect(url)
+        tx = conn.transaction()
+        await tx.start()
+        try:
+            await conn.execute(COMMAND)
+            envelope = (
+                "ciphertext=decode('ab','hex'), wrapped_data_key=decode('cd','hex'), "
+                "nonce=decode(repeat('ef',12),'hex'), key_version=1"
+            )
+            if (
+                table == "execution_commands"
+                and change == "ciphertext = decode('ab','hex')"
+            ):
+                # Apply one field to an otherwise empty envelope.
+                assert (
+                    await conn.fetchval("SELECT ciphertext FROM execution_commands")
+                    is None
+                )
+            elif table == "execution_commands":
+                await conn.execute(
+                    f"UPDATE execution_commands SET {envelope}, state='CLAIMED', "
+                    "generation=1, lease_owner=$1, lease_expires_at=now()+interval '1 minute', "
+                    "dispatch_not_after=now()+interval '2 minutes'",
+                    WORKER,
+                )
+            else:
+                for sql in (ATTEMPT, CONFIRM_ATTEMPT, RECEIPT):
+                    await conn.execute(sql)
+                await conn.execute(f"UPDATE execution_receipts SET {envelope}")
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute(f"UPDATE {table} SET {change}")
+        finally:
+            await tx.rollback()
+            await conn.close()
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("gate", ["PAUSED", None], ids=["paused", "missing"])
+def test_gate_blocks_downgrade_of_empty_ledger(sandbox, gate):
+    url, env, _ = sandbox
+    history = asyncio.run(snapshot(url))
+
+    asyncio.run(assert_schema(url, "0010", gate="LEGACY"))
+    try:
+        if gate is None:
+            asyncio.run(execute_in_sandbox(url, "DELETE FROM execution_dispatch_gate"))
+        else:
+            asyncio.run(
+                execute_in_sandbox(
+                    url, "UPDATE execution_dispatch_gate SET mode=$1", gate
+                )
+            )
+        result = migrate(env, "downgrade", "0009", check=False)
+        assert result.returncode != 0
+        assert (
+            "Cannot downgrade a transferred or populated durable execution ledger"
+            in result.stderr
+        )
+        asyncio.run(assert_schema(url, "0010", gate=gate))
+        assert asyncio.run(snapshot(url)) == history
+    finally:
+        asyncio.run(
+            execute_in_sandbox(
+                url,
+                "INSERT INTO execution_dispatch_gate VALUES (true,'LEGACY') "
+                "ON CONFLICT (singleton) DO UPDATE SET mode='LEGACY'",
+            )
+        )
+        asyncio.run(assert_schema(url, "0010", gate="LEGACY"))

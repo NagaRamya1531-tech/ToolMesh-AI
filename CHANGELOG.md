@@ -2,6 +2,7 @@
 
 ## M9.1.1 · Protected execution contracts and schema
 
+- Hardened independent review coverage for effective ledger privileges, both protected tools, schema boundaries, and downgrade refusal. The full Python suite passed 105 tests. All 14 Chromium checks passed on a fresh rerun after one policy simulation failure. [Review evidence and limitations](docs/architecture/M9_1_1_SCHEMA_IMPLEMENTATION.md#independent-review-hardening)
 - Added typed Slice A persistence contracts and additive PostgreSQL revision `0010`. The gate remains in LEGACY mode and the new runtime dispatch path remains disabled.
 - Preserved legacy approval and execution history and the existing status trigger. The readiness check accepts both compatible schema revisions.
 - Passed 46 focused contract and migration tests, 29 Python Compose checks (25 existing and four contract tests), and 14 Chromium checks. Ruff, mypy, frontend build and Git whitespace checks passed. [Schema, test commands and limitations](docs/architecture/M9_1_1_SCHEMA_IMPLEMENTATION.md)
