@@ -1,5 +1,17 @@
 # Changelog
 
+## M6 · Reliability and operations
+
+- Added PostgreSQL execution timelines and request and OpenTelemetry correlation IDs. The scoped REST endpoint, console and operator CLI expose the recorded evidence.
+- Added Prometheus request and execution metrics, approval metrics, bounded read retries, and per-service circuit breakers. Stale ordinary reads are classified as failed, and uncertain writes are surfaced for review. Existing approval receipt reconciliation remains active.
+- Added a mobile execution table layout, real desktop and mobile screenshots, an operational rehearsal and raw evidence, and updated the architecture diagrams, ADR and runbook.
+
+### Verification
+
+- Applied and repeated migration `0009`. Nineteen Python tests and eleven Chromium tests passed against Compose, including execution event visibility and mobile accessibility. A loopback OTLP receiver decoded an exported trace and confirmed that request path and query input were omitted.
+- The isolated rehearsal completed 20 reads at concurrency four, verified retry and circuit counters, recovered after restoring Payments, and denied invocation during Redis failure. Seeded stale reads became failed and writes remained uncertain. [Method and raw evidence](docs/operations-rehearsal.md)
+- Early local attempts exposed fixture targeting and quota-window interference across suites and degraded timings during simultaneous stack startup. Verification used isolated Compose projects and fresh quota state. Lint, format, type checks, the production frontend build, secret scan, link checks and local Mermaid rendering passed.
+
 ## M5 · Domain breadth and governance
 
 - Completed all 36 specified operations across Payments, Support, IT Operations, HR, Analytics, and Communication. Added masked payment methods, ticket history, simulated restart receipts, HR allowance and leave records, read-only Payments projections for Analytics, and local messaging.

@@ -15,7 +15,10 @@ type Run = { id: string; status: string; error_code: string | null; result: unkn
 type Execution = Omit<Run, "result"> & {
   principal: string; tool_id: string | null; version: number | null;
   started_at: string; finished_at: string | null;
+  request_id: string | null; otel_trace_id: string | null;
 };
+
+type ExecutionEvent = { id: number; status: string; error_code: string | null; recorded_at: string };
 
 function message(error: unknown) {
   return error instanceof Error ? error.message : "The request failed.";
@@ -302,13 +305,18 @@ export function Executions({ session }: { session: Session }) {
     queryFn: () => call<Execution>(`/executions/${encodeURIComponent(trace!)}`, session.token),
     enabled: !!trace,
   });
+  const timeline = useQuery({
+    queryKey: ["execution-events", session.id, trace],
+    queryFn: () => call<ExecutionEvent[]>(`/executions/${encodeURIComponent(trace!)}/events`, session.token),
+    enabled: !!trace,
+  });
   const list = query.data ?? [];
   return <Screen name="Executions" description="Review the latest persisted invocation outcomes and denial evidence.">
     <div className="inline-controls"><label>Status <select value={status} onChange={(event) => setParams({ status: event.target.value, ...(hours ? {hours} : {}) })}>
       <option value="">All statuses</option>{["SUCCEEDED", "DENIED", "FAILED", "UNKNOWN", "RECEIVED", "RUNNING", "PENDING_APPROVAL", "REJECTED", "EXPIRED"].map((value) => <option key={value}>{value}</option>)}
-    </select></label><button disabled={query.isFetching || detail.isFetching} onClick={() => {void query.refetch(); if (trace) void detail.refetch();}}>Refresh</button></div>
+    </select></label><button disabled={query.isFetching || detail.isFetching || timeline.isFetching} onClick={() => {void query.refetch(); if (trace) { void detail.refetch(); void timeline.refetch(); }}}>Refresh</button></div>
     <State loading={query.isPending} error={query.error} retry={query.refetch}>
-      {list.length === 0 ? <p>No executions match this filter.</p> : <div className="panel table-wrap"><table>
+      {list.length === 0 ? <p>No executions match this filter.</p> : <div className="panel table-wrap executions-table"><table>
         <thead><tr><th scope="col">Trace</th><th scope="col">Tool</th><th scope="col">Outcome</th></tr></thead>
         <tbody>{list.map((run) => <tr key={run.id}><th scope="row"><Link to={`?${filters}&trace=${run.id}`}>{run.id.slice(0, 8)}</Link></th><td className="verbatim">{run.tool_id ?? "Unavailable"}</td><td>{run.status}</td></tr>)}</tbody>
       </table></div>}
@@ -316,13 +324,26 @@ export function Executions({ session }: { session: Session }) {
     {trace && <section className="panel detail"><h2>Execution trace</h2>
       <State loading={detail.isPending} error={detail.error} retry={detail.refetch}>
         {detail.data && <dl>
-          <dt>Trace ID</dt><dd><code>{detail.data.id}</code></dd>
+          <dt>Execution ID</dt><dd><code>{detail.data.id}</code></dd>
+          {detail.data.request_id && <><dt>Request ID</dt><dd><code>{detail.data.request_id}</code></dd></>}
+          {detail.data.otel_trace_id && <><dt>OpenTelemetry trace</dt><dd><code>{detail.data.otel_trace_id}</code></dd></>}
           <dt>Caller</dt><dd>{detail.data.principal}</dd><dt>Tool version</dt><dd>{detail.data.version ?? "Unavailable"}</dd>
           <dt>Outcome</dt><dd>{detail.data.status}{detail.data.error_code ? ` · ${detail.data.error_code}` : ""}</dd>
           <dt>Started</dt><dd>{new Date(detail.data.started_at).toLocaleString()}</dd>
           <dt>Finished</dt><dd>{detail.data.finished_at ? new Date(detail.data.finished_at).toLocaleString() : "Pending"}</dd>
         </dl>}
       </State>
+      {detail.data && <>
+        <h3>Status timeline</h3>
+        <State loading={timeline.isPending} error={timeline.error} retry={timeline.refetch}>
+          {timeline.data?.length ? <ol className="execution-timeline">
+            {timeline.data.map((item) => <li key={item.id}>
+              <strong>{item.status}</strong>{item.error_code && <span> · {item.error_code}</span>}
+              <time dateTime={item.recorded_at}>{new Date(item.recorded_at).toLocaleString()}</time>
+            </li>)}
+          </ol> : <p>No status events were recorded for this execution.</p>}
+        </State>
+      </>}
     </section>}
   </Screen>;
 }

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     redis_url: SecretStr
+    otlp_traces_endpoint: str | None = None
     probe_timeout: float = Field(default=2, gt=0, le=10)
 
     payments_secret: SecretStr | None = None

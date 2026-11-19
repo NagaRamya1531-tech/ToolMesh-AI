@@ -46,6 +46,8 @@ async def call_it(address: str, secret: str, operation: str, args: dict) -> dict
             raise HTTPException(422, "INVALID_ARGUMENT") from None
         if code == grpc.StatusCode.DEADLINE_EXCEEDED:
             raise HTTPException(504, "UPSTREAM_TIMEOUT") from None
+        if code in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.RESOURCE_EXHAUSTED}:
+            raise HTTPException(503, "UPSTREAM_UNAVAILABLE") from None
         raise HTTPException(502, "UPSTREAM_ERROR") from None
 
 

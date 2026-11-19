@@ -215,6 +215,16 @@ def test_runtime_mcp_and_persisted_domain_records():
         assert (
             await api.get(f"/executions/{trace_id}", headers=payments)
         ).status_code == 404
+        assert (
+            await api.get(f"/executions/{trace_id}/events", headers=payments)
+        ).status_code == 404
+        events = await api.get(f"/executions/{trace_id}/events", headers=support)
+        assert events.status_code == 200
+        assert [item["status"] for item in events.json()] == [
+            "RECEIVED",
+            "RUNNING",
+            "SUCCEEDED",
+        ]
         assert (await api.get(f"/executions/{trace_id}", headers=admin)).json()[
             "status"
         ] == "SUCCEEDED"

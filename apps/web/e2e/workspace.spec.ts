@@ -45,9 +45,13 @@ test("review a draft, publish, invoke with a separate identity and inspect the t
   await expect(page.getByRole("heading", { name: "Execution trace" })).toBeVisible();
   await expect(page.locator("dd").filter({ hasText: /^support-agent$/ })).toBeVisible();
   await expect(page.locator("dd").filter({ hasText: /^SUCCEEDED$/ })).toBeVisible();
+  await expect(page.locator(".execution-timeline li strong")).toHaveText(["RECEIVED", "RUNNING", "SUCCEEDED"]);
+  await expect(page.getByText("OpenTelemetry trace", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("executions.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await expect.poll(() => page.locator(".executions-table").evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  await page.screenshot({ path: testInfo.outputPath("executions-mobile.png"), fullPage: true });
   const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(audit.violations).toEqual([]);
 });

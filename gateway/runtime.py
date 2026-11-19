@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from uuid import UUID, uuid4
 
 import httpx
@@ -20,6 +21,8 @@ from gateway.discovery import Discovery, Strategy
 from gateway.grpc_adapter import call_it
 from gateway.identity import Principal
 from gateway.redaction import redact
+from gateway.resilience import ReadDispatch
+from gateway.telemetry import Telemetry, request_id, trace_id
 from shared.contracts import TOOLS, tool_contract
 from shared.database import execute, rows
 
@@ -43,6 +46,7 @@ class Runtime:
         discovery: Discovery | None = None,
         hr_secret: str = "",
         analytics_secret: str = "",
+        telemetry: Telemetry | None = None,
     ):
         self.db = db
         self.redis = redis
@@ -53,8 +57,10 @@ class Runtime:
         self.it_secret = it_secret
         self.hr_secret = hr_secret
         self.analytics_secret = analytics_secret
-        self.approvals = Approvals(db, self.downstream)
         self.discovery = discovery
+        self.telemetry = telemetry or Telemetry()
+        self.approvals = Approvals(db, self.downstream, self.telemetry)
+        self.read_dispatch = ReadDispatch(self.telemetry.dispatch_event)
 
     async def tools(
         self,
@@ -66,7 +72,10 @@ class Runtime:
     ):
         if self.discovery is None:
             raise HTTPException(503, "DISCOVERY_UNAVAILABLE")
-        return await self.discovery.tools(principal, service, query, limit, strategy)
+        with self.telemetry.span("discovery.tools"):
+            return await self.discovery.tools(
+                principal, service, query, limit, strategy
+            )
 
     async def servers(self, principal: Principal, query: str, limit: int):
         async with self.db.connect() as conn:
@@ -133,6 +142,12 @@ class Runtime:
             raise HTTPException(429, "RATE_LIMITED")
 
     async def downstream(
+        self, tool_id: str, args: dict, *, refund_id: UUID | None = None
+    ) -> dict:
+        with self.telemetry.span("execution.adapter"):
+            return await self._downstream(tool_id, args, refund_id=refund_id)
+
+    async def _downstream(
         self, tool_id: str, args: dict, *, refund_id: UUID | None = None
     ) -> dict:
         service, operation = tool_id.split(".", 1)
@@ -250,6 +265,7 @@ class Runtime:
         idempotency_key: str | None = None,
     ):
         trace = uuid4()
+        started = time.monotonic()
         selected = None
         result = None
         code = None
@@ -259,39 +275,45 @@ class Runtime:
             await execute(
                 conn,
                 """
-                INSERT INTO executions (id, principal, status) VALUES (:id, :principal, 'RECEIVED')
+                INSERT INTO executions (id, principal, status, request_id, otel_trace_id)
+                VALUES (:id, :principal, 'RECEIVED', :request, :otel)
             """,
                 id=trace,
                 principal=principal.id,
+                request=request_id.get(),
+                otel=trace_id(),
             )
         try:
-            selected = await self.schema(principal, tool_id, version)
-            definition = selected["contract"]
-            dynamic = tool_id == "inventory.get_inventory"
-            input_model = output_model = None
-            if dynamic:
-                if not Draft202012Validator(definition["input_schema"]).is_valid(
-                    arguments
-                ):
+            with self.telemetry.span("execution.authorize"):
+                selected = await self.schema(principal, tool_id, version)
+            with self.telemetry.span("execution.validate"):
+                definition = selected["contract"]
+                dynamic = tool_id == "inventory.get_inventory"
+                input_model = output_model = None
+                if dynamic:
+                    if not Draft202012Validator(definition["input_schema"]).is_valid(
+                        arguments
+                    ):
+                        raise HTTPException(422, "INVALID_ARGUMENT")
+                    args = arguments
+                    permitted = set(definition["output_schema"]["properties"])
+                else:
+                    _, input_model, output_model, write = TOOLS[tool_id]
+                    if definition != tool_contract(tool_id):
+                        raise HTTPException(409, "VERSION_INCOMPATIBLE")
+                    permitted = set(output_model.model_fields)
+                    try:
+                        args = input_model.model_validate_json(
+                            json.dumps(arguments)
+                        ).model_dump(mode="json")
+                    except (ValidationError, ValueError, RecursionError):
+                        raise HTTPException(422, "INVALID_ARGUMENT") from None
+                if fields and not set(fields).issubset(permitted):
                     raise HTTPException(422, "INVALID_ARGUMENT")
-                args = arguments
-                permitted = set(definition["output_schema"]["properties"])
-            else:
-                _, input_model, output_model, write = TOOLS[tool_id]
-                if definition != tool_contract(tool_id):
-                    raise HTTPException(409, "VERSION_INCOMPATIBLE")
-                permitted = set(output_model.model_fields)
-                try:
-                    args = input_model.model_validate_json(
-                        json.dumps(arguments)
-                    ).model_dump(mode="json")
-                except (ValidationError, ValueError, RecursionError):
-                    raise HTTPException(422, "INVALID_ARGUMENT") from None
-            if fields and not set(fields).issubset(permitted):
-                raise HTTPException(422, "INVALID_ARGUMENT")
-            if not object_allowed(principal, args):
-                raise HTTPException(404, "TOOL_NOT_AVAILABLE")
-            await self.quota(principal, tool_id)
+                if not object_allowed(principal, args):
+                    raise HTTPException(404, "TOOL_NOT_AVAILABLE")
+            with self.telemetry.span("execution.quota"):
+                await self.quota(principal, tool_id)
             await self.schema(principal, tool_id, selected["version"])
             if definition["risk"] == "approval":
                 if not idempotency_key:
@@ -311,29 +333,45 @@ class Runtime:
             if tool_id in {"communication.send_notification", "support.resolve_ticket"}:
                 await self.confirm_refund(tool_id, args)
             async with self.db.begin() as conn:
-                await execute(
+                dispatch = await rows(
                     conn,
-                    "UPDATE executions SET status='RUNNING', tool_id=:tool, version=:version WHERE id=:id",
+                    """UPDATE executions SET status='RUNNING', tool_id=:tool,
+                       version=:version, dispatch_risk=:risk
+                       WHERE id=:id AND status='RECEIVED' RETURNING id""",
                     id=trace,
                     tool=tool_id,
                     version=selected["version"],
+                    risk="write" if write else "read",
                 )
+            if not dispatch:
+                raise HTTPException(409, "EXECUTION_EXPIRED")
             status = "RUNNING"
-            payload = await self.downstream(tool_id, args)
-            if output_model is None:
-                if not Draft202012Validator(definition["output_schema"]).is_valid(
-                    payload
-                ):
-                    raise HTTPException(502, "UPSTREAM_SCHEMA_MISMATCH")
-                result = payload
-            else:
-                result = output_model.model_validate_json(
-                    json.dumps(payload)
-                ).model_dump(mode="json")
-            result = redact(result)
-            if fields:
-                result = {field: result[field] for field in fields}
+            with self.telemetry.span("execution.dispatch"):
+                if write:
+                    payload = await self.downstream(tool_id, args)
+                else:
+                    payload = await self.read_dispatch.call(
+                        tool_id.split(".", 1)[0], lambda: self.downstream(tool_id, args)
+                    )
+            with self.telemetry.span("execution.validate_result"):
+                if output_model is None:
+                    if not Draft202012Validator(definition["output_schema"]).is_valid(
+                        payload
+                    ):
+                        raise HTTPException(502, "UPSTREAM_SCHEMA_MISMATCH")
+                    result = payload
+                else:
+                    result = output_model.model_validate_json(
+                        json.dumps(payload)
+                    ).model_dump(mode="json")
+                result = redact(result)
+                if fields:
+                    result = {field: result[field] for field in fields}
             status = "SUCCEEDED"
+        except asyncio.CancelledError:
+            if status == "DENIED":
+                status = "RECEIVED"
+            raise
         except HTTPException as exc:
             code = str(exc.detail)
         except (TimeoutError, httpx.TimeoutException):
@@ -363,16 +401,16 @@ class Runtime:
                     }
                     else "FAILED"
                 )
-            if status not in {"RUNNING", "QUEUED"}:
+            if status not in {"RECEIVED", "RUNNING", "QUEUED"}:
                 if code == "TOOL_NOT_AVAILABLE":
                     selected = None
                 async with self.db.begin() as conn:
-                    await execute(
+                    updated = await rows(
                         conn,
                         """
                         UPDATE executions SET tool_id=:tool, version=:version, status=:status,
                             error_code=:code, finished_at=now()
-                        WHERE id=:id
+                        WHERE id=:id AND status IN ('RECEIVED', 'RUNNING') RETURNING id
                     """,
                         id=trace,
                         tool=tool_id if selected else None,
@@ -380,6 +418,15 @@ class Runtime:
                         status=status,
                         code=code,
                     )
+                    if not updated:
+                        stored = await rows(
+                            conn,
+                            "SELECT status, error_code FROM executions WHERE id=:id",
+                            id=trace,
+                        )
+                        status = stored[0]["status"]
+                        code = stored[0]["error_code"]
+                        result = None
                     if status == "SUCCEEDED" and tool_id in {
                         "communication.send_notification",
                         "support.resolve_ticket",
@@ -390,6 +437,9 @@ class Runtime:
                             else "TICKET_RESOLVED"
                         )
                         await event(conn, principal.id, action, trace)
+            self.telemetry.executions.labels(status=status).observe(
+                time.monotonic() - started
+            )
         return {
             "id": str(trace),
             "status": status,
@@ -435,6 +485,21 @@ class Runtime:
                 ) from None
             raise
 
+    async def execution_events(self, principal: Principal, trace: UUID):
+        async with self.db.connect() as conn:
+            return await rows(
+                conn,
+                """
+                SELECT ev.id, ev.status, ev.error_code, ev.recorded_at
+                FROM execution_events ev JOIN executions e ON e.id=ev.execution_id
+                WHERE e.id=:trace AND (e.principal=:principal OR :admin)
+                ORDER BY ev.id
+                """,
+                trace=trace,
+                principal=principal.id,
+                admin=principal.can_publish or principal.can_approve,
+            )
+
     async def executions(
         self,
         principal: Principal,
@@ -446,7 +511,8 @@ class Runtime:
             return await rows(
                 conn,
                 """
-                SELECT id, principal, tool_id, version, status, error_code, started_at, finished_at
+                SELECT id, principal, tool_id, version, status, error_code, started_at, finished_at,
+                       request_id, otel_trace_id
                 FROM executions
                 WHERE (principal=:principal OR :admin)
                   AND (CAST(:trace AS uuid) IS NULL OR id=CAST(:trace AS uuid))

@@ -8,3 +8,4 @@
 | [0004 · Allowlisted crawler and gRPC](0004-allowlisted-crawler-and-grpc.md) | Constrain discovery to configured targets and use checked-in Protobuf descriptors. |
 | [0005 · Authorization-prefiltered discovery](0005-authorization-prefiltered-discovery.md) | Apply access policy before lexical or vector scoring and isolate the benchmark corpus. |
 | [0006 · Domain governance and scripted agents](0006-domain-governance-and-scripted-agents.md) | Apply versioned policy across the six service domains and persist bounded agent execution steps. |
+| [0007 · Bounded retries and execution evidence](0007-bounded-retries-and-execution-evidence.md) | Retry eligible reads within a deadline, preserve uncertain writes, and record transactional execution timelines. |

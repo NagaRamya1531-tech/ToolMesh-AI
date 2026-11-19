@@ -1,6 +1,6 @@
 # ToolMesh AI
 
-ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M5**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark.
+ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M6**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark.
 
 ## Contents
 
@@ -9,6 +9,7 @@ ToolMesh AI is a local-first MCP gateway for discovering and invoking internal s
 - [Architecture](#architecture)
 - [Security and approvals](#security-and-approvals)
 - [Operations console](#operations-console)
+- [Reliability and operations](#reliability-and-operations)
 - [Benchmarks](#benchmarks)
 - [Development and testing](#development-and-testing)
 - [Repository layout](#repository-layout)
@@ -87,7 +88,11 @@ The following screenshots come from running Compose sandboxes and show synthetic
 
 ![ToolMesh AutoCrawler showing a completed IT Operations crawl and three discovered drafts](docs/screenshots/m3-crawler.png)
 
-[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png)
+[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png)
+
+## Reliability and operations
+
+PostgreSQL records execution timelines with request and OpenTelemetry trace IDs. The console and CLI show these events to callers who can view the corresponding execution. Gateway telemetry is available on a private Prometheus endpoint and supports optional OTLP HTTP export. Ordinary reads retry recognized transient faults within seven seconds and use a per-service circuit breaker. The gateway dispatches writes once and classifies stale writes as uncertain when it cannot prove their outcome. [CLI and incident procedures](docs/runbook.md#inspect-an-execution-and-its-telemetry)
 
 ## Benchmarks
 
@@ -103,9 +108,11 @@ Hybrid had the highest recall and fell short of the 95% target. All three strate
 
 [Methodology, environment, and reproduction commands](docs/discovery-evaluation.md) · [Raw case export](benchmarks/results/m4-seed42-10000x1000.json.gz)
 
+The M6 local operations rehearsal completed 20 Payments reads in batches of four. Client-side median latency was 38.83 ms and nearest-rank p95 was 153.71 ms. The fault run measured six retries before the circuit opened and verified fail-closed Redis quota behavior. [Operations methodology and limitations](docs/operations-rehearsal.md) · [Raw samples](benchmarks/results/m6-local-operations.json)
+
 ## Development and testing
 
-Use Python 3.12, uv, Node.js 22, npm, and Docker Compose. Provision the pinned model for semantic retrieval tests. Integration and browser runs modify sandbox fixtures, so use a disposable Compose project with a fresh database volume. Stop any stack occupying the default ports first. Use a new project name for subsequent fresh runs.
+Use Python 3.12, uv, Node.js 22, npm, and Docker Compose. Provision the pinned model for semantic retrieval tests. Integration and browser runs modify sandbox fixtures, so use a separate disposable Compose project with a fresh database volume for each suite. Stop any stack occupying the default ports first. Use a new project name for subsequent fresh runs.
 
 ```sh
 uv sync --locked --python 3.12
@@ -124,8 +131,10 @@ TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts w
 npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
 npm --prefix apps/web run test:e2e -- evaluations.spec.ts
 npm --prefix apps/web run test:e2e -- access.spec.ts
-TOOLMESH_TEST_API=http://127.0.0.1:8000 TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-doccheck uv run --locked pytest -q
 docker compose -p toolmesh-doccheck down
+docker compose -p toolmesh-pycheck up --build -d --wait
+TOOLMESH_TEST_API=http://127.0.0.1:8000 TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-pycheck uv run --locked pytest -q
+docker compose -p toolmesh-pycheck down
 ```
 
 For standalone Python checks, run `uv run --locked pytest -q` without setting `TOOLMESH_TEST_API`. Set `TOOLMESH_TEST_WEB` and `TOOLMESH_TEST_API` when choosing alternate host ports. The [CI workflow](.github/workflows/ci.yml) records the expected verification steps, including the secret scan. [Milestone documentation checklist](docs/contributing.md#milestone-definition-of-done)
@@ -136,11 +145,11 @@ For standalone Python checks, run `uv run --locked pytest -q` without setting `T
 |---|---|
 | [`gateway/`](gateway/) | Authenticated REST and MCP entry points, invocation, approval reconciliation, scoped discovery, and scripted workflow |
 | [`control_plane/`](control_plane/) | Catalog registration, release lifecycle, crawler jobs, and source translators |
-| [`services/`](services/) | Payments, Support, Communication, Inventory, and IT Operations adapters and domain logic |
+| [`services/`](services/) | Payments, Support, Communication, Inventory, IT Operations, HR, and Analytics adapters and domain logic |
 | [`shared/`](shared/) | Business tool contracts, SQL helpers, Protobuf descriptors, and generated gRPC stubs |
 | [`db/migrations/`](db/migrations/) | Alembic schema changes, domain roles, fixtures, and permissions |
 | [`apps/web/`](apps/web/) | Operations console and browser acceptance tests |
-| [`benchmarks/`](benchmarks/) | Synthetic retrieval dataset, evaluation worker, CLI, and raw exports |
+| [`benchmarks/`](benchmarks/) | Synthetic retrieval dataset, evaluation worker, operations rehearsal, and raw evidence |
 | [`tests/`](tests/) | Python unit and real-service integration checks |
 | [`infra/`](infra/) | Container images and PostgreSQL initialization |
 
@@ -152,7 +161,7 @@ For standalone Python checks, run `uv run --locked pytest -q` without setting `T
 | M3 | Implemented | Allowlisted AutoCrawler, contract lifecycle, Inventory fixture, and three IT gRPC operations |
 | M4 | Implemented | PostgreSQL keyword, vector, and hybrid retrieval and measured synthetic evaluations |
 | M5 | Implemented | All 36 specified domain tools, HR and Analytics, four scripted profiles, policy revisions and simulation, and configurable quotas |
-| M6 | Planned | Operational telemetry, recovery tooling, load testing, and console hardening |
+| M6 | Implemented | Execution timelines and telemetry, bounded reads, stale recovery, operator CLI, and local concurrency and fault rehearsal |
 | M7 | Planned | Release validation and end-to-end evaluation, including provider measurements where configured |
 
 No implementation milestone is in progress at this checkpoint. [Changelog](CHANGELOG.md) · [Product specification](docs/ToolMesh_AI_SRS.md)
@@ -164,4 +173,5 @@ No implementation milestone is in progress at this checkpoint. [Changelog](CHANG
 - Crawler targets are configured local services. Arbitrary external registration and gRPC reflection are outside the current scope.
 - Agent scenarios run bounded LangGraph scripts. LLM-provider execution is planned. Payments, restarts, and messages are simulated.
 - If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Restart approvals also use read-only receipt reconciliation. Ordinary writes have no automated reconciliation or write replay.
+- Circuit state is per gateway process. OTLP export requires a collector, and instrumentation covers the gateway boundary. Background invocations may lack HTTP correlation IDs. Older execution rows predate the timeline. Production throughput remains unmeasured.
 - Vector ranking uses exact distance over the eligible set. M4 measures sequential retrieval on synthetic data and leaves production throughput and semantic abstention unverified.

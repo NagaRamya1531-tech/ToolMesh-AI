@@ -85,8 +85,11 @@ sequenceDiagram
     alt Allowed ordinary operation
         G->>P: Recheck active version and persist RUNNING
         G->>D: Dispatch scoped call
+        opt Transient ordinary read failure
+            G->>D: Retry within deadline when circuit permits
+        end
         D-->>G: Result or normalized error
-        G->>P: Record execution outcome
+        G->>P: Record outcome and status event atomically
         G-->>A: Validated result or error and trace ID
     else Allowed approval-gated operation
         G->>P: Persist bound approval and PENDING_APPROVAL
@@ -223,6 +226,7 @@ The active pointer is a nullable composite reference from the tool ID and active
 ```mermaid
 erDiagram
     EXECUTIONS ||--o| APPROVALS : binds
+    EXECUTIONS ||--o{ EXECUTION_EVENTS : records
     APPROVALS o|..o{ AGENT_RUNS : pauses
     APPROVALS o|..o{ DUPLICATE_WORKFLOWS : follows
     PAYMENT_TRANSACTIONS ||..o{ PAYMENT_REFUNDS : funds
@@ -231,6 +235,15 @@ erDiagram
         uuid id PK
         text principal
         text status
+        text request_id
+        text otel_trace_id
+    }
+    EXECUTION_EVENTS {
+        bigint id PK
+        uuid execution_id FK
+        text status
+        text error_code
+        timestamptz recorded_at
     }
     APPROVALS {
         uuid id PK, FK
@@ -263,6 +276,9 @@ flowchart LR
     Match -->|Yes| Success
     Match -->|No| Unknown
     Result -->|Definitive failure| Failed["Record FAILED"]
+    Stale["Stale ordinary execution"] --> Risk{"Dispatched write or unknown risk"}
+    Risk -->|Yes| Manual["Record UNKNOWN for operator review"]
+    Risk -->|No| Failed
 ```
 
 The reconciler does not replay writes. Expired or rejected approvals and revoked grants block dispatch. Quota unavailability blocks writes. Interrupted crawl jobs can be reclaimed after their lease expires. Interrupted evaluation runs rebuild deterministic inputs from their stored configuration. [Operational procedures](runbook.md#diagnose-startup-and-dependency-failures)
@@ -286,6 +302,8 @@ flowchart LR
         Migration -->|Successful exit| Backend
         Cache --> Gateway
         Gateway --> Backend
+        Scraper["Optional Prometheus scraper"] -->|Scrape metrics| Gateway
+        Gateway -->|Export spans| Collector["Optional OTLP collector"]
         Backend --> Store
     end
 ```

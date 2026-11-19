@@ -1,4 +1,7 @@
 import asyncio
+import json
+import logging
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -8,6 +11,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -29,9 +33,12 @@ from gateway.embeddings import Embeddings
 from gateway.identity import Identity
 from gateway.interfaces import build_api, build_mcp
 from gateway.limits import LimitBody
+from gateway.recovery import recovery_worker
 from gateway.runtime import Runtime
+from gateway.telemetry import Telemetry, request_id, trace_id
 
 Check = Literal["available", "unavailable"]
+logger = logging.getLogger("uvicorn.error")
 
 
 class ErrorDetail(BaseModel):
@@ -83,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def secret(value):
         return value.get_secret_value() if value else ""
 
+    telemetry = Telemetry(config.otlp_traces_endpoint)
     embeddings = Embeddings(config.embedding_path)
     discovery = Discovery(engine, embeddings)
     evaluations = Evaluations(engine, embeddings)
@@ -97,6 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         discovery=discovery,
         hr_secret=secret(config.hr_secret),
         analytics_secret=secret(config.analytics_secret),
+        telemetry=telemetry,
     )
     agent_runs = AgentRuns(runtime)
     crawler = Crawler(
@@ -120,7 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) = ARRAY['0008']::varchar[]"
+                    "FROM alembic_version) = ARRAY['0009']::varchar[]"
                 )
             )
             return all(result.one())
@@ -142,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await embeddings.load()
                 workers = [
                     asyncio.create_task(runtime.approvals.worker()),
+                    asyncio.create_task(recovery_worker(engine, telemetry)),
                     asyncio.create_task(crawler.worker()),
                     asyncio.create_task(discovery.worker()),
                     asyncio.create_task(evaluations.worker()),
@@ -156,6 +166,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await redis.aclose()
             await engine.dispose()
+            await asyncio.to_thread(telemetry.provider.shutdown)
 
     app = FastAPI(title="ToolMesh AI", version="0.1.0", lifespan=lifespan)
 
@@ -199,10 +210,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         request.state.request_id = str(uuid4())
-        response = await call_next(request)
+        token = request_id.set(request.state.request_id)
+        started = time.monotonic()
+        status = 500
+        try:
+            with telemetry.span("http.request") as span:
+                span.set_attribute("toolmesh.request_id", request.state.request_id)
+                try:
+                    response = await call_next(request)
+                    status = response.status_code
+                except Exception as exc:
+                    response = error_response(
+                        request, 500, "INTERNAL_ERROR", "Gateway request failed."
+                    )
+                    span.set_attribute("error.type", type(exc).__name__)
+                finally:
+                    route = (
+                        getattr(request.scope.get("route"), "path", None) or "unmatched"
+                    )
+                    if request.url.path.startswith("/mcp/"):
+                        route = "/mcp/"
+                    span.set_attribute("http.route", route)
+                    span.set_attribute("http.response.status_code", status)
+                    if status >= 500:
+                        logger.warning(
+                            "%s",
+                            json.dumps(
+                                {
+                                    "event": "gateway_http_failure",
+                                    "route": route,
+                                    "status": status,
+                                    "request_id": request.state.request_id,
+                                    "otel_trace_id": trace_id(),
+                                }
+                            ),
+                        )
+                    if route != "/metrics":
+                        telemetry.requests.labels(
+                            route=route, status=str(status)
+                        ).observe(time.monotonic() - started)
+        finally:
+            request_id.reset(token)
         response.headers["X-Request-ID"] = request.state.request_id
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        return Response(
+            generate_latest(telemetry.registry), media_type=CONTENT_TYPE_LATEST
+        )
 
     @app.get("/healthz")
     async def health() -> Liveness:

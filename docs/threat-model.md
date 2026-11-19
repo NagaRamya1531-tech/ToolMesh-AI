@@ -24,3 +24,7 @@ The ranking query filters service grants, active versions, write permission and 
 ### Managed access and local domain boundaries
 
 Profiles impose service ceilings. Explicit denies apply to discovery, schema access, invocation, and approval. The HR profile can access its assigned employee, that employee's manager relationship, and its department. Projected domain outputs expose only contract fields. The gateway masks common credential patterns in returned text. These rules do not provide general-purpose PII detection. Analytics receives read-only projections and cannot write to Payments tables. All communications remain local sandbox records.
+
+## Operational evidence
+
+Execution status events inherit the same caller, administrator, and approver scope as execution records. PostgreSQL captures events transactionally. The gateway database role can read those events and has no direct event insert, update, or delete privileges. Event rows contain status, safe error codes and timestamps. The gateway assigns request IDs itself. Prometheus labels omit principals, identifiers, arguments and query text. Keep metric scrapers and trace collectors on operator-controlled networks. Restrict the gateway ingress to public application routes if deploying beyond loopback.

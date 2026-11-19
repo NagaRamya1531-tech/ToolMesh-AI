@@ -70,3 +70,25 @@ Publish the relevant versioned contracts in Registry before running a scenario. 
 Open **Playground → Agent scenarios**, enter the requested arguments, and inspect the ordered execution links. For the IT run, sign in separately as `refund-approver`, approve the restart in **Approvals**, then return as the initiating agent and select **Resume after decision**. The final health step verifies the persisted simulated state.
 
 A platform administrator can create an agent in **Agents**, configure an operation-specific rule and run **Simulate** in **Policies**, or update the quotas in **Settings**. Simulation checks access and object scope without invoking a tool.
+
+## Inspect an execution and its telemetry
+
+Use the console's **Executions** view or the CLI with an opaque session token supplied as `TOOLMESH_TOKEN`. For interactive login, add `--user payments-agent` before the command and enter the password at the prompt.
+
+```sh
+uv run --locked python -m gateway.cli ready
+uv run --locked python -m gateway.cli --user payments-agent discover transaction
+uv run --locked python -m gateway.cli schema payments.get_transaction
+printf '%s\n' '{"customer_id":"C-102","transaction_id":"TX-102-A"}' \
+  | uv run --locked python -m gateway.cli invoke payments.get_transaction
+uv run --locked python -m gateway.cli trace "$EXECUTION_ID"
+curl -fsS http://127.0.0.1:8000/metrics
+```
+
+Publish the transaction tool first. Set `EXECUTION_ID` to the returned execution ID. The CLI uses exit 0 for a successful invocation or queued approval, exit 1 for a gateway rejection, failure, or uncertain outcome, and exit 2 for client input or communication errors. Keep session tokens out of shells with tracing enabled. The CLI permits plain HTTP on loopback only.
+
+Scrape `/metrics` on the gateway's private interface. The console proxy blocks this route. The process exports HTTP response setup latency, initial execution latency and outcomes, read retry and circuit events, approval decisions, oldest pending approval age, and stale execution classifications. Route templates and service names are bounded labels. Use request and trace IDs in the execution record to correlate an incident. External lookup by trace ID requires a collector to have received the span. Set `TOOLMESH_OTLP_TRACES_ENDPOINT` to the collector's full OTLP HTTP traces URL, such as `http://collector:4318/v1/traces` on a trusted Compose network, then recreate the API container. Keep the collector on a private network or use TLS for remote export.
+
+### Handle stalled executions
+
+A failed read may be retried by the caller after the downstream service recovers. An open circuit permits one read probe after 15 seconds. A recovery pass runs every 10 seconds and classifies ordinary `RECEIVED` and `RUNNING` rows older than five minutes in batches of up to 100. Pre-dispatch and read rows become `FAILED`. Dispatched writes and legacy rows with unknown dispatch risk become `UNKNOWN`. Approval rows remain under the approval recovery worker, which checks domain receipts. For an uncertain ordinary write, review domain evidence with the owning team before deciding whether to submit a new operation.

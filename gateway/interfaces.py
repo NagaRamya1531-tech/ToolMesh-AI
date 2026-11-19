@@ -143,6 +143,15 @@ class ExecutionRecord(BaseModel):
     error_code: str | None
     started_at: datetime
     finished_at: datetime | None
+    request_id: str | None
+    otel_trace_id: str | None
+
+
+class ExecutionEvent(BaseModel):
+    id: int
+    status: str
+    error_code: str | None
+    recorded_at: datetime
 
 
 def public_tools(values: list[dict]) -> list[dict]:
@@ -166,7 +175,8 @@ def build_api(
     workflow = DuplicateWorkflow(runtime)
 
     async def caller(authorization: Annotated[str, Header()] = "") -> Principal:
-        return await identity.principal(authorization)
+        with runtime.telemetry.span("auth.resolve_principal"):
+            return await identity.principal(authorization)
 
     @router.post("/auth/login", response_model=SessionToken)
     async def login(body: Credentials):
@@ -249,6 +259,11 @@ def build_api(
         if not values:
             raise HTTPException(404, "EXECUTION_NOT_AVAILABLE")
         return values[0]
+
+    @router.get("/executions/{trace_id}/events", response_model=list[ExecutionEvent])
+    async def execution_events(trace_id: UUID, principal: Principal = Depends(caller)):
+        await execution(trace_id, principal)
+        return await runtime.execution_events(principal, trace_id)
 
     @router.get("/approvals")
     async def approvals(principal: Principal = Depends(caller)):
@@ -409,7 +424,8 @@ def build_mcp(identity: Identity, runtime: Runtime, hosts: list[str]):
         if token is None:
             raise ToolError("AUTH_REQUIRED")
         try:
-            return await identity.principal(f"Bearer {token.token}")
+            with runtime.telemetry.span("auth.resolve_principal"):
+                return await identity.principal(f"Bearer {token.token}")
         except HTTPException as exc:
             raise ToolError(str(exc.detail)) from None
 

@@ -36,13 +36,23 @@ jobs:
       - run: npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
       - run: npm --prefix apps/web run test:e2e -- evaluations.spec.ts
       - run: npm --prefix apps/web run test:e2e -- access.spec.ts
-      - run: TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
+      - name: Start a fresh database for Python integration tests
+        run: |
+          docker compose down
+          docker compose -p toolmesh-integration up --build -d --wait
+      - run: TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-integration TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_API=http://127.0.0.1:8000 uv run --locked pytest -q
       - name: Scan working tree for secrets
         run: |
           docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.0 dir /repo --redact --no-banner --config /repo/.gitleaks.toml
       - name: Show Compose statuses
         if: failure()
-        run: docker compose ps -a
+        run: |
+          docker compose ps -a
+          docker compose -p toolmesh-integration ps -a
       - name: Stop sandbox
         if: always()
-        run: test ! -f .env || docker compose down
+        run: |
+          if [ -f .env ]; then
+            docker compose down
+            docker compose -p toolmesh-integration down
+          fi

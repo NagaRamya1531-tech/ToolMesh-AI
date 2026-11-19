@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from gateway.access import POLICY, object_allowed, scope_params
 from gateway.identity import Principal, resolve_principal
+from gateway.telemetry import Telemetry
 from shared.contracts import Refund, tool_contract
 from shared.database import execute, rows
 from shared.domain_contracts import RestartResult
@@ -37,9 +38,10 @@ async def event(conn: AsyncConnection, actor: str, action: str, resource: UUID):
 
 
 class Approvals:
-    def __init__(self, db: AsyncEngine, dispatch: Dispatch):
+    def __init__(self, db: AsyncEngine, dispatch: Dispatch, telemetry: Telemetry):
         self.db = db
         self.dispatch = dispatch
+        self.telemetry = telemetry
 
     @staticmethod
     def prefix(tool: str) -> str:
@@ -78,6 +80,12 @@ class Approvals:
                 "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
                 key=f"{principal.id}:{tool}:{request_key}",
             )
+            if not await rows(
+                conn,
+                "SELECT id FROM executions WHERE id=:id AND status='RECEIVED' FOR UPDATE",
+                id=trace,
+            ):
+                raise HTTPException(409, "EXECUTION_EXPIRED")
             grants = await self.eligible(conn, principal, tool, version, args)
             if not grants:
                 raise HTTPException(404, "TOOL_NOT_AVAILABLE")
@@ -160,6 +168,9 @@ class Approvals:
                     f"{self.prefix(row['tool_id'])}_APPROVAL_EXPIRED",
                     row["id"],
                 )
+
+        if expired:
+            self.telemetry.approval_decisions.labels(status="EXPIRED").inc(len(expired))
 
     async def list(self, principal: Principal):
         await self.expire()
@@ -261,6 +272,7 @@ class Approvals:
                 f"{self.prefix(item['tool_id'])}_{status}",
                 approval_id,
             )
+        self.telemetry.approval_decisions.labels(status=status).inc()
         if approve:
             return await self.apply(item)
         return {
