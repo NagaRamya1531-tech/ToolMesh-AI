@@ -111,27 +111,35 @@ class ExecutionApprovals:
         async with self._transaction() as (conn, revision):
             item = await self._lock(conn, execution_id)
             approval = item.approval
+            status = ApprovalState(approval["status"])
             principal = await resolve_principal(conn, actor)
             if (
                 principal is None
                 or principal.kind != "human"
                 or principal.customer != approval["customer_id"]
                 or principal.id == approval["requester"]
-                or not await rows(
-                    conn,
-                    """
-                    SELECT 1 FROM execution_approval_entitlements
-                    WHERE principal=:actor AND customer_id=:customer AND tool_id=:tool AND enabled
-                    """,
-                    actor=actor,
-                    customer=approval["customer_id"],
-                    tool=approval["tool_id"],
-                )
+            ):
+                raise CommandStoreError("APPROVAL_NOT_AVAILABLE")
+
+            # Current entitlement controls new decisions. The original actor
+            # can recover a committed decision, subject to the checks below.
+            owns_decision = (
+                status in (ApprovalState.APPROVED, ApprovalState.REJECTED)
+                and approval["decided_by"] == principal.id
+            )
+            if not owns_decision and not await rows(
+                conn,
+                """
+                SELECT 1 FROM execution_approval_entitlements
+                WHERE principal=:actor AND customer_id=:customer AND tool_id=:tool AND enabled
+                """,
+                actor=actor,
+                customer=approval["customer_id"],
+                tool=approval["tool_id"],
             ):
                 raise CommandStoreError("APPROVAL_NOT_AVAILABLE")
 
             scope, arguments = await self._verify_intent(conn, execution_id, item)
-            status = ApprovalState(approval["status"])
             reason_digest = self._digests.intent(
                 canonical_json(
                     ["approval-decision.v1", str(execution_id), actor, decision, reason]

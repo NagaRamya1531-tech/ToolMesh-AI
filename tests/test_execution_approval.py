@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncTransaction, create_async_engine
 from starlette.exceptions import HTTPException
 from test_durable_execution_schema import IMAGE, migrate, snapshot
 from test_durable_execution_schema import sandbox as sandbox
@@ -600,5 +600,180 @@ def test_revocation_after_admission_cannot_rewrite_approved_revision(
                         conn,
                         "UPDATE refund_grants SET enabled=true WHERE principal='finance-agent'",
                     )
+
+    asyncio.run(check())
+
+
+@asynccontextmanager
+async def revoked_refund_entitlement(db):
+    statement = """
+        UPDATE execution_approval_entitlements SET enabled=:enabled
+        WHERE principal=:actor AND customer_id='C-102' AND tool_id='payments.issue_refund'
+    """
+    async with db.begin() as conn:
+        await execute(conn, statement, enabled=False, actor=APPROVER)
+    try:
+        yield
+    finally:
+        async with db.begin() as conn:
+            await execute(conn, statement, enabled=True, actor=APPROVER)
+
+
+@DB
+def test_review_lost_commit_ack_replays_after_revocation(upgraded, monkeypatch):
+    async def check():
+        async with approvals_fixture(upgraded) as (db, store, service, _, _):
+            ident = (await store.submit(REQUEST)).execution_id
+            exit_transaction = AsyncTransaction.__aexit__
+
+            async def lose_ack(transaction, *failure):
+                await exit_transaction(transaction, *failure)
+                raise OSError("synthetic response loss after commit")
+
+            with monkeypatch.context() as patch:
+                patch.setattr(AsyncTransaction, "__aexit__", lose_ack)
+                with pytest.raises(
+                    CommandStoreError, match="^APPROVAL_STORE_UNAVAILABLE$"
+                ):
+                    await service.decide(ident, APPROVER, "APPROVED", REASON)
+            async with revoked_refund_entitlement(db):
+                before = await get_state(db, ident)
+                assert before["approval"] == "APPROVED" and before["evidence"] == 1
+                result = await service.decide(ident, APPROVER, "APPROVED", REASON)
+                assert result.replayed and result.execution_id == ident
+                assert result.dispatch_not_after == before["dispatch_not_after"]
+                assert await get_state(db, ident) == before
+
+    asyncio.run(check())
+
+
+@DB
+@pytest.mark.parametrize("decision", ["APPROVED", "REJECTED"])
+def test_review_committed_decision_replays_after_entitlement_revocation(
+    upgraded, decision
+):
+    async def check():
+        async with approvals_fixture(upgraded) as (db, store, service, _, _):
+            ident = (await store.submit(REQUEST)).execution_id
+            original = await service.decide(ident, APPROVER, decision, REASON)
+            async with revoked_refund_entitlement(db):
+                state = await get_state(db, ident)
+                async with db.connect() as conn:
+                    evidence = await rows(
+                        conn,
+                        "SELECT * FROM execution_approval_decisions WHERE execution_id=:id",
+                        id=ident,
+                    )
+                results = await asyncio.gather(
+                    *(
+                        service.decide(ident, APPROVER, decision, REASON)
+                        for _ in range(4)
+                    )
+                )
+                assert results == [replace(original, replayed=True)] * 4
+                assert await get_state(db, ident) == state
+                async with db.connect() as conn:
+                    assert evidence == await rows(
+                        conn,
+                        "SELECT * FROM execution_approval_decisions WHERE execution_id=:id",
+                        id=ident,
+                    )
+
+    asyncio.run(check())
+
+
+@DB
+@pytest.mark.parametrize("decision", ["APPROVED", "REJECTED"])
+def test_review_revoked_actor_cannot_decide_pending_command(upgraded, decision):
+    async def check():
+        async with approvals_fixture(upgraded) as (db, store, service, _, _):
+            ident = (await store.submit(REQUEST)).execution_id
+            async with revoked_refund_entitlement(db):
+                pending = await get_state(db, ident)
+                with pytest.raises(CommandStoreError, match="^APPROVAL_NOT_AVAILABLE$"):
+                    await service.decide(ident, APPROVER, decision, REASON)
+                assert await get_state(db, ident) == pending
+                assert pending["approval"] == "PENDING" and pending["evidence"] == 0
+
+    asyncio.run(check())
+
+
+@DB
+@pytest.mark.parametrize("mismatch", ["actor", "reason", "decision"])
+def test_review_committed_decision_rejects_nonidentical_retry(upgraded, mismatch):
+    async def check():
+        async with approvals_fixture(upgraded) as (db, store, service, _, _):
+            ident = (await store.submit(REQUEST)).execution_id
+            await service.decide(ident, APPROVER, "APPROVED", REASON)
+            other = "platform-admin"
+            if mismatch == "actor":
+                async with db.begin() as conn:
+                    await execute(
+                        conn,
+                        """
+                        INSERT INTO execution_approval_entitlements(principal, customer_id, tool_id)
+                        VALUES (:actor,'C-102','payments.issue_refund')
+                        """,
+                        actor=other,
+                    )
+            try:
+                async with revoked_refund_entitlement(db):
+                    original = await get_state(db, ident)
+                    with pytest.raises(
+                        CommandStoreError, match="^APPROVAL_ALREADY_DECIDED$"
+                    ):
+                        await service.decide(
+                            ident,
+                            other if mismatch == "actor" else APPROVER,
+                            "REJECTED" if mismatch == "decision" else "APPROVED",
+                            "different synthetic reason"
+                            if mismatch == "reason"
+                            else REASON,
+                        )
+                    assert await get_state(db, ident) == original
+                    assert (
+                        original["decided_by"] == APPROVER and original["evidence"] == 1
+                    )
+            finally:
+                if mismatch == "actor":
+                    async with db.begin() as conn:
+                        await execute(
+                            conn,
+                            "DELETE FROM execution_approval_entitlements WHERE principal=:actor",
+                            actor=other,
+                        )
+
+    asyncio.run(check())
+
+
+@DB
+def test_review_expiration_is_not_a_committed_human_decision(upgraded):
+    async def check():
+        async with approvals_fixture(upgraded) as (db, store, service, _, _):
+            ident = (await store.submit(REQUEST)).execution_id
+            async with db.begin() as conn:
+                await execute(
+                    conn,
+                    "UPDATE approvals SET expires_at=now()-interval '1 second' WHERE id=:id",
+                    id=ident,
+                )
+            results = await asyncio.gather(
+                service.expire(ident),
+                service.decide(ident, APPROVER, "APPROVED", REASON),
+            )
+            assert all(
+                result.approval_status is ApprovalState.EXPIRED for result in results
+            )
+            assert sum(not result.replayed for result in results) == 1
+            async with revoked_refund_entitlement(db):
+                expired = await get_state(db, ident)
+                with pytest.raises(CommandStoreError, match="^APPROVAL_NOT_AVAILABLE$"):
+                    await service.decide(ident, APPROVER, "APPROVED", REASON)
+                assert await get_state(db, ident) == expired
+                assert expired["evidence"] == 0 and expired["decided_by"] is None
+                assert expired["audit"] == [
+                    "DURABLE_APPROVAL_REQUESTED",
+                    "DURABLE_APPROVAL_EXPIRED",
+                ]
 
     asyncio.run(check())
