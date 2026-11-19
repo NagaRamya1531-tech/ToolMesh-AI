@@ -326,3 +326,94 @@ main > h1 { color: #f4f7ff; font-size: clamp(28px, 4vw, 38px); line-height: 1.14
 @media (max-width: 420px) {
   .dependency-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Navigation accents follow each workspace section into its pages. */
+[data-section="platform"] { --section-accent: #9ab8ff; --section-tint: #203755; }
+[data-section="access"] { --section-accent: #efc786; --section-tint: #443525; }
+[data-section="operations"] { --section-accent: #8be1d3; --section-tint: #183d43; }
+[data-section="quality"] { --section-accent: #cbb2fa; --section-tint: #352b51; }
+[data-section="administration"] { --section-accent: #ffb4c3; --section-tint: #452e45; }
+nav section h2 { display: flex; align-items: center; gap: 8px; }
+nav section h2::before { content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--section-accent); }
+nav section a[aria-current] { color: var(--section-accent); background: var(--section-tint); border-inline-start-color: var(--section-accent); }
+.workspace-page:not([data-section]) { --section-accent: #a9c9ff; --section-tint: #203755; }
+.workspace-page-header {
+  margin-bottom: 20px;
+  padding: clamp(16px, 3vw, 32px);
+  border: 1px solid #344d68;
+  border-inline-start: 4px solid var(--section-accent);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at right top, var(--section-tint), transparent 72%),
+    #121f33;
+}
+.workspace-page-header h1 { margin: 0; font-size: clamp(29px, 4vw, 45px); line-height: 1.12; letter-spacing: -.045em; }
+.workspace-page-header .breadcrumb { color: var(--section-accent); }
+.workspace-page-header .breadcrumb span { margin-inline: 3px; color: var(--muted); }
+.workspace-page-header .description { margin: 7px 0 0; }
+.workspace-page > .filter, .workspace-page > .inline-controls, .workspace-page > .workspace-feedback {
+  border: 1px solid var(--line);
+  background: #111d30;
+  border-radius: 10px;
+  padding: 10px 13px;
+}
+.workspace-page table { table-layout: auto; }
+.workspace-page :is(th, td) { width: auto; padding: 10px 14px; overflow-wrap: anywhere; }
+.workspace-page thead th { border-top: 0; background: #1a2a42; }
+.workspace-page tbody tr:nth-child(even) { background: #132237; }
+.workspace-page tbody tr:hover { background: #1c304a; }
+.workspace-page .detail h2 { overflow-wrap: anywhere; }
+.workspace-page .detail pre { max-height: 26rem; }
+.record-workspace, .record-list, .workspace-tool { min-width: 0; }
+.record-workspace.has-inspector { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.record-workspace > .detail { min-width: 0; margin-top: 0; border-top: 2px solid var(--section-accent); }
+.record-workspace.has-inspector .record-list .table-wrap { max-height: 27rem; }
+.record-status {
+  display: inline-block;
+  border: 1px solid #3c526d;
+  background: #203249;
+  color: #d1dded;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: .85rem;
+  line-height: 1.35;
+}
+.record-status[data-tone="positive"] { border-color: #3d6d60; background: #193932; color: #9ce5c6; }
+.record-status[data-tone="attention"] { border-color: #736346; background: #393125; color: #f2d6a4; }
+.record-status[data-tone="blocked"] { border-color: #835a6a; background: #432b3b; color: #ffbbc8; }
+.workspace-tools-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.workspace-tools-grid .table-wrap { margin-top: 0; padding: 0; }
+.workspace-setup { border-top: 2px solid var(--section-accent); }
+.workspace-setup h2 { margin: 0 0 2px; font-size: 17px; }
+.workspace-feedback { color: var(--muted); }
+@media (min-width: 1220px) {
+  .record-workspace.has-inspector { grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr); }
+}
+@media (min-width: 1060px) {
+  .workspace-tools-grid { grid-template-columns: minmax(240px, .85fr) minmax(0, 1.5fr); }
+}
+.workspace-page .form-panel > button:not(:disabled) {
+  background: var(--section-tint);
+  border-color: var(--section-accent);
+  color: var(--section-accent);
+}
+.workspace-page .form-panel > button:not(:disabled):hover {
+  background: #243550;
+}
+@media (max-width: 760px) {
+  .workspace-page :is(th, td) { padding-inline: 9px; }
+  .workspace-page .executions-table table { table-layout: fixed; }
+}
+.record-list > p:not([role]) {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #101b2d;
+  color: var(--muted);
+}
+.record-workspace.has-inspector thead th { position: sticky; top: 0; z-index: 1; }
+.workspace-page tbody tr[data-selected="true"] {
+  background: var(--section-tint);
+  box-shadow: inset 3px 0 var(--section-accent);
+}

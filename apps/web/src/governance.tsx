@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
-import { Screen, State, type Session } from "./workspace";
+import { RecordWorkspace, Screen, State, StatusLabel } from "./screen";
+import type { Session } from "./workspace";
 
 type Approval = {
   id: string; requester: string; customer_id: string; transaction_id: string|null; service_id: string|null;
@@ -50,15 +51,16 @@ export function Approvals({ session }: { session: Session }) {
     <label className="filter">Status <select value={status} onChange={(event) => setParams(event.target.value ? { status: event.target.value } : {})}>
       <option value="">All statuses</option>{approvalStatuses.map((value) => <option key={value}>{value}</option>)}
     </select></label>
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
+    <RecordWorkspace selected={current?.id ?? null}>
+    <div className="record-list"><State loading={query.isPending} error={query.error} retry={query.refetch}>
       {approvals.length === 0 ? <p>No refund approvals in this view.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Transaction</th><th scope="col">Amount (minor units)</th><th scope="col">Approval</th><th scope="col">Execution</th></tr></thead>
-        <tbody>{approvals.map((approval) => <tr key={approval.id}>
+        <tbody>{approvals.map((approval) => <tr key={approval.id} data-selected={approval.id === selected}>
           <th scope="row"><Link to={`?status=${status}&approval=${approval.id}`} onClick={() => {setReason(""); setFeedback(null);}}>{approval.transaction_id ?? approval.service_id}</Link></th>
-          <td>{approval.amount_minor?.toLocaleString() ?? "—"} {approval.currency}</td><td>{approval.status}</td><td>{approval.execution_status}</td>
+          <td>{approval.amount_minor?.toLocaleString() ?? "—"} {approval.currency}</td><td><StatusLabel value={approval.status} /></td><td><StatusLabel value={approval.execution_status} /></td>
         </tr>)}</tbody>
       </table></div>}
-    </State>
+    </State></div>
     {current && <section className="panel detail" aria-label={current.service_id ? "Restart intent" : "Refund intent"}>
       <h2>{current.service_id ? "Restart intent" : "Refund intent"}</h2>
       <dl>
@@ -80,6 +82,7 @@ export function Approvals({ session }: { session: Session }) {
       </div>}
       {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
     </section>}
+    </RecordWorkspace>
   </Screen>;
 }
 

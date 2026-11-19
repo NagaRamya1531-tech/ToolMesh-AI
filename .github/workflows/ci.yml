@@ -32,7 +32,7 @@ jobs:
           docker compose config --quiet
           docker compose up --build -d --wait
           docker compose run --rm migrate
-      - run: TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts provider.spec.ts
+      - run: TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts provider.spec.ts sidebar.spec.ts
       - run: npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
       - run: npm --prefix apps/web run test:e2e -- evaluations.spec.ts
       - run: npm --prefix apps/web run test:e2e -- access.spec.ts

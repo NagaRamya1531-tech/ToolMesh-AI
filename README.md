@@ -104,11 +104,11 @@ Finance refund requests and IT restart requests bind exact intent and use idempo
 
 ## Operations console
 
-The following screenshots come from running Compose sandboxes and show synthetic fixtures or actual recorded evaluation results.
+The following screenshots come from running Compose sandboxes and show synthetic fixtures or actual recorded evaluation results. Sidebar sections carry their own accents into the page headers. Selecting a record opens an inspector beside the list on wide screens and below it on smaller screens.
 
 ![ToolMesh operations workspace showing the tool request path, dependency health, and recorded execution outcomes](docs/screenshots/m8-overview-workspace.png)
 
-[Mobile overview](docs/screenshots/m8-overview-mobile.png) · [OpenAI Playground](docs/screenshots/m8-playground.png) · [Mobile Playground](docs/screenshots/m8-playground-mobile.png) · [AutoCrawler](docs/screenshots/m3-crawler.png) · [Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
+[Registry inspector](docs/screenshots/m8-registry-inspector.png) · [Mobile agent management](docs/screenshots/m8-agents-mobile.png) · [Evaluation workspace](docs/screenshots/m8-evaluation-workspace.png) · [Mobile overview](docs/screenshots/m8-overview-mobile.png) · [OpenAI Playground](docs/screenshots/m8-playground.png) · [Mobile Playground](docs/screenshots/m8-playground-mobile.png) · [AutoCrawler](docs/screenshots/m3-crawler.png) · [Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
 
 ## OpenAI Playground
 
@@ -167,7 +167,7 @@ npm --prefix apps/web run build
 
 docker compose -p toolmesh-doccheck up --build -d --wait
 docker compose -p toolmesh-doccheck run --rm migrate
-TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts provider.spec.ts
+TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts provider.spec.ts sidebar.spec.ts
 npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
 npm --prefix apps/web run test:e2e -- evaluations.spec.ts
 npm --prefix apps/web run test:e2e -- access.spec.ts

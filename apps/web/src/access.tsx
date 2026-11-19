@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
-import { Screen, State } from "./screen";
+import { Screen, State, StatusLabel } from "./screen";
 import type { Session } from "./workspace";
 
 type Agent = {id:string;profile:string;enabled:boolean;origin:string};
@@ -40,7 +40,10 @@ export function Agents({session}:{session:Session}) {
     finally {setPending(false);}
   }
   return <Screen name="Agents" description="Create scoped sandbox identities and revoke their active sessions.">
-    <form className="panel form-panel" onSubmit={create}>
+    <div className="workspace-tools-grid">
+    <div className="workspace-tool">
+    <form className="panel form-panel workspace-setup" onSubmit={create}>
+      <h2>New agent</h2>
       <label>Agent ID<input name="id" pattern="[a-z][a-z0-9\-]{2,47}" required /></label>
       <label>Profile<select name="profile"><option value="support">Support</option><option value="finance">Finance</option><option value="it">IT</option><option value="hr">HR</option></select></label>
       <button disabled={pending}>Create agent</button>
@@ -52,16 +55,18 @@ export function Agents({session}:{session:Session}) {
       <p><code>{credential.credential}</code></p>
       <button onClick={()=>setCredential(null)}>Dismiss credential</button>
     </section>}
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
+    </div>
+    <div className="workspace-tool"><State loading={query.isPending} error={query.error} retry={query.refetch}>
       <div className="panel table-wrap detail"><table>
         <thead><tr><th scope="col">Agent</th><th scope="col">Profile</th><th scope="col">Credential source</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead>
         <tbody>{query.data?.map((agent)=><tr key={agent.id}>
           <th scope="row"><Link to={`/policies?principal=${agent.id}`}>{agent.id}</Link></th>
-          <td>{agent.profile}</td><td>{agent.origin}</td><td>{agent.enabled?"Enabled":"Disabled"}</td>
+          <td>{agent.profile}</td><td>{agent.origin}</td><td><StatusLabel value={agent.enabled ? "Enabled" : "Disabled"} /></td>
           <td><button disabled={pending} onClick={()=>void toggle(agent)} aria-label={`${agent.enabled?"Disable":"Enable"} ${agent.id}`}>{agent.enabled?"Disable":"Enable"}</button></td>
         </tr>)}</tbody>
       </table></div>
-    </State>
+    </State></div>
+    </div>
   </Screen>;
 }
 
@@ -133,7 +138,7 @@ export function Policies({session}:{session:Session}) {
         <thead><tr><th scope="col">Tool</th><th scope="col">Principal</th><th scope="col">Effect</th><th scope="col">State</th></tr></thead>
         <tbody>{rules.data.filter((rule)=>!principal||rule.principal===principal).map((rule)=><tr key={rule.id}>
           <th scope="row"><Link to={`?principal=${principal}&rule=${rule.id}`}>{rule.tool_id}</Link></th>
-          <td>{rule.principal}</td><td>{rule.effect}</td><td>{rule.enabled?"Enabled":"Disabled"}</td>
+          <td>{rule.principal}</td><td><StatusLabel value={rule.effect} /></td><td><StatusLabel value={rule.enabled ? "Enabled" : "Disabled"} /></td>
         </tr>)}</tbody>
       </table></div>:<p>No managed policies.</p>}
     </State>
@@ -169,7 +174,8 @@ export function Settings({session}:{session:Session}) {
   }
   return <Screen name="Settings" description="Configure per-principal tool and global execution quotas over fixed one-minute windows.">
     <State loading={query.isPending} error={query.error} retry={query.refetch}>
-      {query.data && <form className="panel form-panel" onSubmit={submit}>
+      {query.data && <form className="panel form-panel workspace-setup" onSubmit={submit}>
+        <h2>Execution quotas</h2>
         <label>Per-principal tool quota<input name="tool" type="number" min={1} max={600} defaultValue={query.data.per_tool} required /></label>
         <label>Global execution quota<input name="global" type="number" min={1} max={10000} defaultValue={query.data.global_limit} required /></label>
         <button disabled={pending}>Save quotas</button>

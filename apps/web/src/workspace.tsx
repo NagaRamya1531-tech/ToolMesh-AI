@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
 import { ServiceActions, ServiceRegistration } from "./crawler";
 import { ProviderPlayground } from "./provider-playground";
-import { Screen, State } from "./screen";
+import { RecordWorkspace, Screen, State, StatusLabel } from "./screen";
 export { Screen, State } from "./screen";
 
 export type Session = { token: string; id: string; kind: "human" | "agent"; profile:string };
@@ -47,7 +47,7 @@ export function SignIn({ onSession }: { onSession: (session: Session) => void })
     }
   }
   return <Screen name="Sign in" description="Use a local sandbox identity to access the catalog and runtime.">
-    <form className="panel form-panel" onSubmit={submit}>
+    <form className="panel form-panel workspace-setup" onSubmit={submit}>
       <label>Identity<select name="username" value={identity} onChange={(event)=>setIdentity(event.target.value)}>
         <option value="platform-admin">Platform administrator</option>
         <option value="support-agent">Support agent</option>
@@ -76,21 +76,23 @@ export function Services({ session }: { session: Session }) {
       <option value="">All protocols</option><option>REST</option><option>MCP</option><option>gRPC</option>
     </select></label>
     {session.id==="platform-admin" && query.data && <ServiceRegistration session={session} registered={query.data.map((option)=>option.id)} />}
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
+    <RecordWorkspace selected={values.some((service) => service.id === selected) ? selected : null}>
+    <div className="record-list"><State loading={query.isPending} error={query.error} retry={query.refetch}>
       {values.length === 0 ? <p>No services match this filter.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Service</th><th scope="col">Protocol</th><th scope="col">Published tools</th><th scope="col">Health</th></tr></thead>
-        <tbody>{values.map((service) => <tr key={service.id}>
+        <tbody>{values.map((service) => <tr key={service.id} data-selected={service.id === selected}>
           <th scope="row"><Link to={`?protocol=${protocol}&service=${service.id}`}>{service.name}</Link></th>
-          <td>{service.protocol}</td><td>{service.published_tools}</td><td>{service.health}{service.checked_at && Date.now()-Date.parse(service.checked_at)>300000 ? " · stale" : ""}</td>
+          <td>{service.protocol}</td><td>{service.published_tools}</td><td><StatusLabel value={service.health} />{service.checked_at && Date.now()-Date.parse(service.checked_at)>300000 ? " · stale" : ""}</td>
         </tr>)}</tbody>
       </table></div>}
-      {values.filter((service) => service.id === selected).map((service) => <section className="panel detail" key={service.id}>
+    </State></div>
+      {values.filter((service) => service.id === selected).map((service) => <section className="panel detail" aria-label={`${service.name} details`} key={service.id}>
         <h2>{service.name}</h2><p>Owner <code>{service.owner}</code></p><p>Endpoint <code>{service.id}:{service.protocol==="gRPC" ? 50051 : 8000}</code></p>
         <Link to={`/tools?service=${service.id}`}>View tools</Link>
         {service.checked_at && <p>Last checked {new Date(service.checked_at).toLocaleString()} {service.health_error ?? ""}</p>}
         {session.id==="platform-admin" && <ServiceActions key={service.id} session={session} service={service.id} name={service.name}/>}
       </section>)}
-    </State>
+    </RecordWorkspace>
   </Screen>;
 }
 
@@ -166,17 +168,18 @@ export function Registry({ session }: { session: Session }) {
       <option value="">All services</option><option value="payments">Payments</option><option value="support">Support</option><option value="communication">Communication</option><option value="inventory">Inventory</option><option value="it">IT Operations</option><option value="hr">Human Resources</option><option value="analytics">Analytics</option>
     </select></label>
     {notice && <p role="status" className="ok">{notice}</p>}
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
+    <RecordWorkspace selected={tool?.id ?? null}>
+    <div className="record-list"><State loading={query.isPending} error={query.error} retry={query.refetch}>
       {values.length === 0 ? <p>No tools match this filter.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Tool</th><th scope="col">Version</th><th scope="col">Status</th></tr></thead>
-        <tbody>{values.map((value) => <tr key={value.id}><th scope="row"><Link to={`?service=${service}&tool=${value.id}`} onClick={() => {setNotice(""); setError(""); setReason("");}}>{value.id}</Link></th>
-          <td>v{value.version}</td><td>{"lifecycle" in value
+        <tbody>{values.map((value) => <tr key={value.id} data-selected={value.id === selected}><th scope="row"><Link to={`?service=${service}&tool=${value.id}`} onClick={() => {setNotice(""); setError(""); setReason("");}}>{value.id}</Link></th>
+          <td>v{value.version}</td><td><StatusLabel value={"lifecycle" in value
             ? value.lifecycle !== "published"
               ? value.lifecycle[0].toUpperCase() + value.lifecycle.slice(1)
               : value.active_version === value.version ? "Published" : `Draft · active v${value.active_version}`
-            : "Published"}</td></tr>)}</tbody>
+            : "Published"} /></td></tr>)}</tbody>
       </table></div>}
-    </State>
+    </State></div>
     {tool && <section className="panel detail" aria-label="Tool contract">
       <h2>{tool.id}</h2>
       {choices.length>1 && <label className="filter">Contract version <select value={tool.version} onChange={(event)=>setParams({service,tool:tool.id,version:event.target.value})}>
@@ -199,10 +202,10 @@ export function Registry({ session }: { session: Session }) {
         </form>}
       <State loading={!contract && detail.isPending} error={detail.error} retry={detail.refetch}>
         {contract && <><p>{contract.description} <span className="environment">{contract.risk}</span></p>
-          <h3>Input schema</h3><pre>{JSON.stringify(contract.input_schema, null, 2)}</pre>
-          <h3>Output schema</h3><pre>{JSON.stringify(contract.output_schema, null, 2)}</pre></>}
+          <h3>Input schema</h3><pre tabIndex={0} role="region" aria-label="Input schema code">{JSON.stringify(contract.input_schema, null, 2)}</pre>
+          <h3>Output schema</h3><pre tabIndex={0} role="region" aria-label="Output schema code">{JSON.stringify(contract.output_schema, null, 2)}</pre></>}
       </State>
-      {diff && <details><summary>Schema diff from v{previous?.version}</summary><pre>{JSON.stringify(diff,null,2)}</pre></details>}
+      {diff && <details><summary>Schema diff from v{previous?.version}</summary><pre tabIndex={0} role="region" aria-label="Schema diff code">{JSON.stringify(diff,null,2)}</pre></details>}
       {history.data && history.data.history.length>0 && <details>
         <summary>Release history</summary>
         <ul>{history.data.history.map((event,index)=><li key={`${event.created_at}-${index}`}>
@@ -210,6 +213,7 @@ export function Registry({ session }: { session: Session }) {
         </li>)}</ul>
       </details>}
     </section>}
+    </RecordWorkspace>
   </Screen>;
 }
 
@@ -333,12 +337,13 @@ export function Executions({ session }: { session: Session }) {
     <div className="inline-controls"><label>Status <select value={status} onChange={(event) => setParams({ status: event.target.value, ...(hours ? {hours} : {}) })}>
       <option value="">All statuses</option>{["SUCCEEDED", "DENIED", "FAILED", "UNKNOWN", "RECEIVED", "RUNNING", "PENDING_APPROVAL", "REJECTED", "EXPIRED"].map((value) => <option key={value}>{value}</option>)}
     </select></label><button disabled={query.isFetching || detail.isFetching || timeline.isFetching} onClick={() => {void query.refetch(); if (trace) { void detail.refetch(); void timeline.refetch(); }}}>Refresh</button></div>
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
+    <RecordWorkspace selected={trace}>
+    <div className="record-list"><State loading={query.isPending} error={query.error} retry={query.refetch}>
       {list.length === 0 ? <p>No executions match this filter.</p> : <div className="panel table-wrap executions-table"><table>
         <thead><tr><th scope="col">Trace</th><th scope="col">Tool</th><th scope="col">Outcome</th></tr></thead>
-        <tbody>{list.map((run) => <tr key={run.id}><th scope="row"><Link to={`?${filters}&trace=${run.id}`}>{run.id.slice(0, 8)}</Link></th><td className="verbatim">{run.tool_id ?? "Unavailable"}</td><td>{run.status}</td></tr>)}</tbody>
+        <tbody>{list.map((run) => <tr key={run.id} data-selected={run.id === trace}><th scope="row"><Link to={`?${filters}&trace=${run.id}`}>{run.id.slice(0, 8)}</Link></th><td className="verbatim">{run.tool_id ?? "Unavailable"}</td><td><StatusLabel value={run.status} /></td></tr>)}</tbody>
       </table></div>}
-    </State>
+    </State></div>
     {trace && <section className="panel detail"><h2>Execution trace</h2>
       <State loading={detail.isPending} error={detail.error} retry={detail.refetch}>
         {detail.data && <dl>
@@ -363,5 +368,6 @@ export function Executions({ session }: { session: Session }) {
         </State>
       </>}
     </section>}
+    </RecordWorkspace>
   </Screen>;
 }

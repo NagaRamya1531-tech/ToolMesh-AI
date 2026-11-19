@@ -10,32 +10,19 @@ import { Crawler } from "./crawler";
 import { Evaluations } from "./evaluations";
 import { Agents, Policies, Settings } from "./access";
 import { AgentScenarios } from "./agent-scenarios";
+import { consoleSections } from "./navigation";
 import "./styles.css";
 
-const groups = [
-  ["Platform", "Overview", "Services", "Registry", "AutoCrawler"],
-  ["Access", "Agents", "Policies", "Approvals"],
-  ["Operations", "Playground", "Executions", "Audit"],
-  ["Quality", "Evaluations"],
-  ["Administration", "Settings"],
-];
 const queryClient = new QueryClient();
-
-const routes: Record<string, string> = {
-  Overview: "/", Services: "/services", Registry: "/tools", Playground: "/playground", Executions: "/executions", Approvals: "/approvals", Audit: "/audit", AutoCrawler: "/crawler", Evaluations: "/evaluations", Agents: "/agents", Policies: "/policies", Settings: "/settings",
-};
 
 function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Console">
-      {groups.map(([group, ...items]) => (
-        <section key={group}>
-          <h2>{group}</h2>
-          <ul>{items.map((item) => (
-            <li key={item}>{routes[item]
-              ? <NavLink to={routes[item]} end onClick={onNavigate}>{item}</NavLink>
-              : <span className="planned">{item}<small>Planned</small></span>}
-            </li>
+      {consoleSections.map(({ label, tone, pages }) => (
+        <section key={label} data-section={tone}>
+          <h2>{label}</h2>
+          <ul>{pages.map(([name, route]) => (
+            <li key={name}><NavLink to={route} end={route === "/"} onClick={onNavigate}>{name}</NavLink></li>
           ))}</ul>
         </section>
       ))}

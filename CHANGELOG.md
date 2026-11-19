@@ -2,6 +2,8 @@
 
 ## M8 · OpenAI Playground and architecture refresh
 
+- Extended the console redesign to all sidebar destinations. Added section headers, status labels, responsive record inspectors, and side-by-side setup and history for Agents and Evaluations. Browser coverage verified route controls, selected-record highlighting, and the mobile drawer. The mobile Registry overflow found on the first pass was corrected.
+
 - Redesigned the console shell and Overview with a tool request path, dependency status cards, and outcome breakdown. The activity cards and chart link to scoped execution and approval views. Verified the production build, the signed-in time-range drill-down, and six Chromium checks including axe and responsive readiness.
 
 - Added the opt-in OpenAI Playground for one scoped sandbox read per task. The console shows the tool result, execution trace, provider-reported tokens and estimated cost.

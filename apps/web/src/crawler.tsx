@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
-import { Screen, State } from "./screen";
+import { RecordWorkspace, Screen, State, StatusLabel } from "./screen";
 import type { Session } from "./workspace";
 
 type Target = { id: string; protocol: string; endpoint: string };
@@ -119,13 +119,14 @@ export function Crawler({session}:{session:Session}) {
       </select></label><button disabled={pending||!service} onClick={()=>void enqueue(service)}>Run crawl</button></div>
     </State>
     {error && <p role="alert" className="warning">{error}</p>}
-    <State loading={crawl.isPending} error={crawl.error} retry={crawl.refetch}>
+    <RecordWorkspace selected={selected?.id ?? null}>
+    <div className="record-list"><State loading={crawl.isPending} error={crawl.error} retry={crawl.refetch}>
       {records.length===0 ? <p>No crawl jobs in this view.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Service</th><th scope="col">Job</th><th scope="col">Status</th></tr></thead>
-        <tbody>{records.map((record)=><tr key={record.id}><th scope="row">{record.service_id}</th>
-          <td><Link to={`?service=${service}&job=${record.id}`}>{record.id.slice(0,8)}</Link></td><td>{record.status}</td></tr>)}</tbody>
+        <tbody>{records.map((record)=><tr key={record.id} data-selected={record.id === selected?.id}><th scope="row">{record.service_id}</th>
+          <td><Link to={`?service=${service}&job=${record.id}`}>{record.id.slice(0,8)}</Link></td><td><StatusLabel value={record.status} /></td></tr>)}</tbody>
       </table></div>}
-    </State>
+    </State></div>
     {selected && <section className="panel detail" aria-label="Crawl job">
       <h2>{selected.service_id} crawl</h2>
       <p role="status">{selected.status}{selected.error&&` · ${selected.error}`}</p>
@@ -136,8 +137,9 @@ export function Crawler({session}:{session:Session}) {
         <p>{change.tool_id&&change.version
           ? <Link to={`/tools?service=${selected.service_id}&tool=${change.tool_id}&version=${change.version}`}>{change.tool_id} v{change.version}</Link>
           : change.tool_id??change.name} · {change.status}{change.reason&&` · ${change.reason}`}</p>
-        {change.diff && Object.keys(change.diff).length>0 && <details><summary>Schema diff</summary><pre>{JSON.stringify(change.diff,null,2)}</pre></details>}
+        {change.diff && Object.keys(change.diff).length>0 && <details><summary>Schema diff</summary><pre tabIndex={0} role="region" aria-label="Schema diff code">{JSON.stringify(change.diff,null,2)}</pre></details>}
       </section>)}
     </section>}
+    </RecordWorkspace>
   </Screen>;
 }

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { call } from "./api";
-import { Screen, State } from "./screen";
+import { Screen, State, StatusLabel } from "./screen";
 import type { Session } from "./workspace";
 
 const strategies = ["keyword", "vector", "hybrid"] as const;
@@ -137,7 +137,9 @@ export function Evaluations({session}: {session: Session}) {
 
   return <Screen name="Evaluations" description="Compare keyword, vector, and hybrid retrieval on a synthetic, non-executable catalog.">
     <State loading={list.isPending} error={list.error} retry={list.refetch}>
-      <form className="panel form-panel" onSubmit={start}>
+      <div className="workspace-tools-grid">
+      <form className="panel form-panel workspace-setup" onSubmit={start}>
+        <h2>New evaluation</h2>
         <label>Catalog definitions<input name="catalog" type="number" min={60} max={10000} defaultValue={1000} required /></label>
         <label>Labeled cases<input name="cases" type="number" min={10} max={1000} defaultValue={120} required /></label>
         <label>Dataset split<select name="split"><option value="test">Held-out test</option><option value="tuning">Tuning</option></select></label>
@@ -145,14 +147,15 @@ export function Evaluations({session}: {session: Session}) {
           : "Provision the pinned model using the README before running an evaluation."}</p>
         <button disabled={pending||active||list.data?.model.status!=="ready"}>{active?"Evaluation in progress":"Run evaluation"}</button>
       </form>
-      {error && <p className="warning" role="alert">{error}</p>}
+      <div className="workspace-tool">{error && <p className="warning" role="alert">{error}</p>}
       {list.data?.runs.length ? <div className="panel table-wrap detail"><table>
         <thead><tr><th scope="col">Requested</th><th scope="col">Split</th><th scope="col">Definitions / cases</th><th scope="col">Status</th></tr></thead>
         <tbody>{list.data.runs.map((item)=><tr key={item.id}>
           <th scope="row"><Link to={`?run=${item.id}`}>{new Date(item.requested_at).toLocaleString()}</Link></th>
-          <td>{item.configuration.split}</td><td>{size(item.catalog_size)} / {size(item.case_count)}</td><td>{item.status}</td>
+          <td>{item.configuration.split}</td><td>{size(item.catalog_size)} / {size(item.case_count)}</td><td><StatusLabel value={item.status} /></td>
         </tr>)}</tbody>
-      </table></div> : <p>No evaluation runs yet.</p>}
+      </table></div> : <p className="workspace-feedback">No evaluation runs yet.</p>}</div>
+      </div>
     </State>
     {selected && <section className="panel detail" aria-label="Evaluation run">
       <h2>Evaluation run</h2>
