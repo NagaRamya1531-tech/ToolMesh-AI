@@ -106,9 +106,9 @@ Finance refund requests and IT restart requests bind exact intent and use idempo
 
 The following screenshots come from running Compose sandboxes and show synthetic fixtures or actual recorded evaluation results.
 
-![ToolMesh OpenAI Playground showing a successful synthetic duplicate payment check, token usage, and an execution trace](docs/screenshots/m8-playground.png)
+![ToolMesh operations workspace showing the tool request path, dependency health, and recorded execution outcomes](docs/screenshots/m8-overview-workspace.png)
 
-[Mobile Playground](docs/screenshots/m8-playground-mobile.png) · [AutoCrawler](docs/screenshots/m3-crawler.png) · [Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
+[Mobile overview](docs/screenshots/m8-overview-mobile.png) · [OpenAI Playground](docs/screenshots/m8-playground.png) · [Mobile Playground](docs/screenshots/m8-playground-mobile.png) · [AutoCrawler](docs/screenshots/m3-crawler.png) · [Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png) · [Execution timeline](docs/screenshots/m6-executions.png) · [Mobile execution timeline](docs/screenshots/m6-executions-mobile.png) · [Release evaluation smoke test](docs/screenshots/m7-evaluations.png)
 
 ## OpenAI Playground
 

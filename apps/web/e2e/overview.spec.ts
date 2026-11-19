@@ -43,3 +43,28 @@ test("retries after a lost connection", async ({ page }) => {
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("status")).toHaveText("Ready");
 });
+
+test("signed-in activity range and execution links reflect the gateway", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1060 });
+  await page.goto("/services");
+  await page.getByLabel("Password").fill(process.env.TOOLMESH_ADMIN_PASSWORD ?? "local_admin_password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Services" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Console" }).getByRole("link", { name: "Overview" }).click();
+  const activity = page.getByRole("region", { name: "Execution activity" });
+  await expect(activity.getByRole("link", { name: /Executions in range/ })).toHaveAttribute("href", "/executions?hours=24");
+  const refreshed = page.waitForResponse((response) => new URL(response.url()).searchParams.get("hours") === "168");
+  await activity.getByLabel("Time range").selectOption("168");
+  const response = await refreshed;
+  expect(response.ok()).toBeTruthy();
+  const data = await response.json();
+  const count = data.outcomes.reduce((total: number, entry: { count: number }) => total + entry.count, 0);
+  const drilldown = activity.getByRole("link", { name: /Executions in range/ });
+  await expect(drilldown).toContainText(count.toLocaleString());
+  await expect(drilldown).toHaveAttribute("href", "/executions?hours=168");
+  const scan = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+  expect(scan.violations).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("overview-workspace.png"), fullPage: true });
+  await drilldown.click();
+  await expect(page).toHaveURL(/executions\?hours=168$/);
+});

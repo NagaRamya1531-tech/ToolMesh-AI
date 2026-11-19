@@ -2,6 +2,8 @@
 
 ## M8 · OpenAI Playground and architecture refresh
 
+- Redesigned the console shell and Overview with a tool request path, dependency status cards, and outcome breakdown. The activity cards and chart link to scoped execution and approval views. Verified the production build, the signed-in time-range drill-down, and six Chromium checks including axe and responsive readiness.
+
 - Added the opt-in OpenAI Playground for one scoped sandbox read per task. The console shows the tool result, execution trace, provider-reported tokens and estimated cost.
 - Bound provider input, candidates, request deadline and output tokens. Reuse gateway quota, session, scope, version, schema and execution checks. Keep the server credential outside the console.
 - Refreshed the console palette, README, and architecture diagrams. Added a standalone SVG, an ADR, and live desktop and mobile screenshots.

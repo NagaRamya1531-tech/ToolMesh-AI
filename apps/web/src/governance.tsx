@@ -130,18 +130,28 @@ export function OverviewActivity({ session }: { session: Session }) {
   const hours = ["1", "24", "168"].includes(params.get("hours") ?? "") ? params.get("hours")! : "24";
   const query = useQuery({ queryKey: ["overview", session.id, hours], queryFn: () => call<OverviewData>(`/overview?hours=${hours}`, session.token), refetchInterval: 15000 });
   const total = query.data?.outcomes.reduce((sum, entry) => sum + entry.count, 0) ?? 0;
-  return <section className="panel detail" aria-label="Execution activity">
-    <div className="inline-controls"><h2>Execution activity</h2><label>Time range <select value={hours} onChange={(event) => setParams({ hours: event.target.value })}>
-      <option value="1">Last hour</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option>
-    </select></label></div>
-    <State loading={query.isPending} error={query.error} retry={query.refetch}>
-      {query.data && <>
-        <p><Link to={`/executions?hours=${hours}`}>{total} executions</Link> · <Link to="/approvals?status=PENDING">{query.data.pending} currently pending approvals</Link></p>
-        {total ? <ul className="outcomes">{query.data.outcomes.map((item) => <li key={item.status}>
-          <Link to={`/executions?hours=${hours}&status=${item.status}`}>{item.status} · {item.count}</Link><meter min={0} max={total} value={item.count} aria-label={`${item.status} executions`} />
-        </li>)}</ul> : <p>No executions in this time range.</p>}
-        <p className="breadcrumb">Last refreshed {new Date(query.dataUpdatedAt).toLocaleTimeString()}</p>
-      </>}
-    </State>
+  return <section className="panel activity-panel" aria-labelledby="activity-heading">
+    <header className="panel-heading">
+      <h2 id="activity-heading">Execution activity</h2>
+      <label className="activity-filter">Time range <select value={hours} onChange={(event) => setParams({ hours: event.target.value })}>
+        <option value="1">Last hour</option><option value="24">Last 24 hours</option><option value="168">Last 7 days</option>
+      </select></label>
+    </header>
+    <div className="activity-content">
+      <State loading={query.isPending} error={query.error} retry={query.refetch}>
+        {query.data && <>
+          <div className="activity-metrics">
+            <Link to={`/executions?hours=${hours}`}><strong>{total.toLocaleString()}</strong><span>Executions in range</span></Link>
+            <Link to="/approvals?status=PENDING"><strong>{query.data.pending.toLocaleString()}</strong><span>Pending approvals</span></Link>
+          </div>
+          {total ? <ul className="outcomes activity-outcomes">{query.data.outcomes.map((item) => <li key={item.status} data-outcome={item.status}>
+            <Link to={`/executions?hours=${hours}&status=${item.status}`}>{item.status.replaceAll("_", " ")}</Link>
+            <meter min={0} max={total} value={item.count} aria-label={`${item.status} executions`} />
+            <span>{item.count.toLocaleString()}</span>
+          </li>)}</ul> : <p className="activity-empty">No executions in this time range.</p>}
+        </>}
+      </State>
+    </div>
+    {query.data && <footer>Last refreshed <time dateTime={new Date(query.dataUpdatedAt).toISOString()}>{new Date(query.dataUpdatedAt).toLocaleTimeString()}</time></footer>}
   </section>;
 }
