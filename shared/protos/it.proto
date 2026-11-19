@@ -5,6 +5,10 @@ service Operations {
   rpc CheckServiceHealth (HealthRequest) returns (ServiceHealth);
   rpc ListIncidents (CustomerRequest) returns (IncidentList);
   rpc CreateIncident (IncidentRequest) returns (Incident);
+  rpc GetSystemLogs (LogRequest) returns (LogList);
+  rpc RestartService (RestartRequest) returns (RestartReceipt);
+  rpc GetRestartReceipt (RestartRequest) returns (RestartReceipt);
+  rpc GetDeploymentStatus (HealthRequest) returns (Deployment);
 }
 
 message CustomerRequest { string customer_id = 1; }
@@ -13,3 +17,10 @@ message ServiceHealth { string service_id = 1; string status = 2; }
 message IncidentRequest { string customer_id = 1; string service_id = 2; string title = 3; }
 message Incident { string id = 1; string service_id = 2; string title = 3; string status = 4; }
 message IncidentList { repeated Incident incidents = 1; }
+
+message LogRequest { string customer_id = 1; string service_id = 2; string level = 3; int32 limit = 4; }
+message LogEntry { string timestamp = 1; string level = 2; string message = 3; }
+message LogList { repeated LogEntry logs = 1; }
+message RestartRequest { string customer_id = 1; string service_id = 2; string operation_id = 3; }
+message RestartReceipt { string id = 1; string customer_id = 2; string service_id = 3; string status = 4; }
+message Deployment { string service_id = 1; string release = 2; string status = 3; }

@@ -1,6 +1,6 @@
 # ToolMesh AI
 
-ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M4**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes a reproducible retrieval benchmark.
+ToolMesh AI is a local-first MCP gateway for discovering and invoking internal service operations under explicit access policy. The repository currently implements milestones **M0 through M5**. The sandbox connects actual REST, MCP, and gRPC services to an operations console and includes scripted LangGraph profiles, scoped policy administration, and a reproducible retrieval benchmark.
 
 ## Contents
 
@@ -32,7 +32,7 @@ docker compose up --build -d --wait
 curl -fsS http://127.0.0.1:8000/readyz
 ```
 
-Open the [console](http://127.0.0.1:5173), [REST API contract](http://127.0.0.1:8000/docs), or [MCP Streamable HTTP endpoint](http://127.0.0.1:8000/mcp/). Sign in as `platform-admin` with the value of `TOOLMESH_ADMIN_PASSWORD` in your local `.env`. Start with the [single-tool walkthrough](docs/runbook.md#invoke-a-single-tool) or try the [approval-gated refund workflow](docs/runbook.md#run-the-duplicate-payment-workflow).
+Open the [console](http://127.0.0.1:5173), [REST API contract](http://127.0.0.1:8000/docs), or [MCP Streamable HTTP endpoint](http://127.0.0.1:8000/mcp/). Sign in as `platform-admin` with the value of `TOOLMESH_ADMIN_PASSWORD` in your local `.env`. Start with the [single-tool walkthrough](docs/runbook.md#invoke-a-single-tool) or try the [approval-gated refund workflow](docs/runbook.md#run-the-duplicate-payment-workflow). The [scripted profile walkthrough](docs/runbook.md#run-scripted-agent-scenarios) covers Support, Finance, IT, and HR.
 
 The one-shot Alembic job provisions pgvector, the workspace, isolated domain schemas, and deterministic synthetic fixtures. It exits before the API and domain services start. The console and gateway bind to loopback. Shutdown with `docker compose down` preserves PostgreSQL data.
 
@@ -75,9 +75,9 @@ flowchart LR
 
 ## Security and approvals
 
-The gateway uses expiring opaque sandbox sessions, current grants, and operation and customer scope checks. Ranking runs over the authorized active catalog. The crawler accepts configured targets, checks resolved addresses, and pins the connection address. Domain services have separate credentials and PostgreSQL roles.
+The gateway uses expiring opaque sandbox sessions, versioned allow and deny rules, and operation and customer scope checks. Agent credentials are hashed and shown once at creation. Administrators can revoke sessions by disabling an agent. Ranking runs over the authorized active catalog. The crawler accepts configured targets, checks resolved addresses, and pins the connection address. Domain services have separate credentials and PostgreSQL roles.
 
-A Finance requester submits an idempotent refund request. A different actor with the approver grant reviews the bound amount, currency, customer, transaction, and tool version. The gateway records the decision atomically, rechecks authorization and dispatches the approved write. After an uncertain response, a background worker reads the ledger and confirms success only when the receipt matches.
+Finance refund requests and IT restart requests bind exact intent and use idempotency keys. A different actor with the approver grant reviews the bound operation, customer, target, and tool version. Refund intent also includes currency and amount. The gateway records the decision atomically, rechecks authorization and dispatches the approved write. After an uncertain response, a background worker reads the owning service's receipt and confirms success only when it matches.
 
 [Authorization, approval, and recovery diagrams](docs/architecture.md#refund-approval) · [Threat model](docs/threat-model.md)
 
@@ -87,7 +87,7 @@ The following screenshots come from running Compose sandboxes and show synthetic
 
 ![ToolMesh AutoCrawler showing a completed IT Operations crawl and three discovered drafts](docs/screenshots/m3-crawler.png)
 
-[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png)
+[Registry](docs/screenshots/m1-registry.png) · [Refund approval](docs/screenshots/m2-approval.png) · [Resolved workflow](docs/screenshots/m2-workflow.png) · [Evaluations](docs/screenshots/m4-evaluations.png) · [Policies](docs/screenshots/m5-policies.png) · [Finance scenario](docs/screenshots/m5-scenario.png)
 
 ## Benchmarks
 
@@ -123,6 +123,7 @@ docker compose -p toolmesh-doccheck run --rm migrate
 TOOLMESH_EXPECT_DRAFT=1 npm --prefix apps/web run test:e2e -- overview.spec.ts workspace.spec.ts
 npm --prefix apps/web run test:e2e -- refund.spec.ts crawler.spec.ts
 npm --prefix apps/web run test:e2e -- evaluations.spec.ts
+npm --prefix apps/web run test:e2e -- access.spec.ts
 TOOLMESH_TEST_API=http://127.0.0.1:8000 TOOLMESH_TEST_REQUIRE_MODEL=1 TOOLMESH_TEST_MUTATE_POLICY=1 TOOLMESH_TEST_COMPOSE_PROJECT=toolmesh-doccheck uv run --locked pytest -q
 docker compose -p toolmesh-doccheck down
 ```
@@ -150,7 +151,7 @@ For standalone Python checks, run `uv run --locked pytest -q` without setting `T
 | M0–M2 | Implemented | Compose foundation, authenticated runtime, Payments and Support, human refund approval, reconciliation, and simulated communication |
 | M3 | Implemented | Allowlisted AutoCrawler, contract lifecycle, Inventory fixture, and three IT gRPC operations |
 | M4 | Implemented | PostgreSQL keyword, vector, and hybrid retrieval and measured synthetic evaluations |
-| M5 | Planned | HR and Analytics, broader tool coverage and agent profiles, and governance controls |
+| M5 | Implemented | All 36 specified domain tools, HR and Analytics, four scripted profiles, policy revisions and simulation, and configurable quotas |
 | M6 | Planned | Operational telemetry, recovery tooling, load testing, and console hardening |
 | M7 | Planned | Release validation and end-to-end evaluation, including provider measurements where configured |
 
@@ -159,8 +160,8 @@ No implementation milestone is in progress at this checkpoint. [Changelog](CHANG
 ## Limitations
 
 - The supported deployment is a single local Compose sandbox. Production SSO, TLS, multi-tenant isolation, and high availability are planned.
-- The local catalog implements up to fourteen business operations across five services, including the Inventory fixture. Publication state determines which operations are discoverable. HR and Analytics appear in synthetic benchmarks only.
+- The local sandbox implements all 36 specified business tools across six domains plus supplemental fixture and workflow tools. Publication state determines which operations are discoverable.
 - Crawler targets are configured local services. Arbitrary external registration and gRPC reflection are outside the current scope.
-- The refund workflow is a persisted script. Model-driven LangGraph execution is planned. Payments and notifications are simulated.
-- If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Ordinary writes have no automated reconciliation or write replay.
+- Agent scenarios run bounded LangGraph scripts. LLM-provider execution is planned. Payments, restarts, and messages are simulated.
+- If refund reconciliation finds no matching receipt, execution remains `UNKNOWN` for review. Restart approvals also use read-only receipt reconciliation. Ordinary writes have no automated reconciliation or write replay.
 - Vector ranking uses exact distance over the eligible set. M4 measures sequential retrieval on synthetic data and leaves production throughput and semantic abstention unverified.

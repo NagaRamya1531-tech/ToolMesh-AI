@@ -7,6 +7,7 @@ from typing import Literal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from gateway.access import POLICY, scope_params
 from gateway.embeddings import MODEL_ID, Embeddings
 from gateway.identity import Principal
 from shared.database import execute, rows
@@ -14,14 +15,6 @@ from shared.database import execute, rows
 Strategy = Literal["keyword", "vector", "hybrid"]
 STRATEGIES: tuple[Strategy, ...] = ("keyword", "vector", "hybrid")
 LOGGER = logging.getLogger("uvicorn.error.discovery")
-
-POLICY = """
-    t.service_id=ANY(CAST(:services AS text[]))
-    AND (v.contract->>'risk'='read' OR (v.contract->>'risk'='write' AND :can_write)
-        OR (v.contract->>'risk'='approval' AND EXISTS (
-            SELECT 1 FROM refund_grants
-            WHERE principal=:principal AND enabled AND customer_id=:customer)))
-"""
 
 # The caller provides a constant SQL fragment defining an authorized candidate set.
 # Keyword and vector scoring run only against the materialized filtered relation.
@@ -112,10 +105,7 @@ class Discovery:
         strategy: Strategy,
     ):
         params = {
-            "services": list(principal.services),
-            "principal": principal.id,
-            "can_write": principal.can_write,
-            "customer": principal.customer,
+            **scope_params(principal),
             "service": service or "",
             "query": query.strip(),
             "limit": limit,

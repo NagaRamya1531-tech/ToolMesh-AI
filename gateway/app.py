@@ -20,7 +20,9 @@ from benchmarks.api import build_evaluation_api
 from benchmarks.evaluation import Evaluations
 from control_plane.catalog import Catalog
 from control_plane.crawler import Crawler
+from control_plane.governance import build_governance
 from control_plane.sources import Target
+from gateway.agent_runs import AgentRuns, build_agent_api
 from gateway.config import Settings
 from gateway.discovery import Discovery
 from gateway.embeddings import Embeddings
@@ -74,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "finance-agent": config.finance_password,
             "refund-approver": config.approver_password,
             "it-agent": config.it_password,
+            "hr-agent": config.hr_password,
         },
     )
 
@@ -92,7 +95,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         secret(config.inventory_secret),
         secret(config.it_secret),
         discovery=discovery,
+        hr_secret=secret(config.hr_secret),
+        analytics_secret=secret(config.analytics_secret),
     )
+    agent_runs = AgentRuns(runtime)
     crawler = Crawler(
         engine,
         {
@@ -101,6 +107,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "communication": Target("MCP", 8000, secret(config.communication_secret)),
             "inventory": Target("REST", 8000, secret(config.inventory_secret)),
             "it": Target("gRPC", 50051, secret(config.it_secret)),
+            "hr": Target("REST", 8000, secret(config.hr_secret)),
+            "analytics": Target("REST", 8000, secret(config.analytics_secret)),
         },
     )
     mcp = build_mcp(identity, runtime, ["localhost:*", "127.0.0.1:*", "api:*"])
@@ -112,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) = ARRAY['0006']::varchar[]"
+                    "FROM alembic_version) = ARRAY['0008']::varchar[]"
                 )
             )
             return all(result.one())
@@ -137,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     asyncio.create_task(crawler.worker()),
                     asyncio.create_task(discovery.worker()),
                     asyncio.create_task(evaluations.worker()),
+                    asyncio.create_task(agent_runs.worker()),
                 ]
                 try:
                     yield
@@ -213,6 +222,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             checks={"postgres": postgres, "redis": redis_status},
         )
 
+    app.include_router(build_agent_api(identity, agent_runs))
+    app.include_router(build_governance(identity, runtime))
     app.include_router(build_evaluation_api(identity, evaluations))
     app.include_router(build_api(identity, runtime, Catalog(engine), crawler))
     app.mount("/mcp", mcp)

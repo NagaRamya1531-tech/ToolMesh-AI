@@ -6,7 +6,7 @@ The gateway exposes a FastAPI control API and a FastMCP Streamable HTTP endpoint
 
 Payments runs as a REST service and Support runs as a native MCP server. Each accesses its own PostgreSQL schema through a distinct login. The gateway dispatches to fixed Compose destinations with separate internal credentials. It validates the persisted contract against the running adapter, verifies the authenticated caller's customer scope and sends the authorized customer ID downstream. Both services query by that customer ID.
 
-Local principals have explicit service and write grants defined in code. The database stores only hashed opaque session tokens and their expiry. Runtime does not cache allow decisions. Redis enforces fixed windows for login and invocation. Before dispatch, PostgreSQL stores a trace ID, caller, tool version and running status. Successful outcomes require contract-validated downstream data. Failed writes whose effect is uncertain return `UNKNOWN`. Traces persist metadata, rather than caller payloads or free-form service results.
+Profiles define service ceilings, while PostgreSQL stores managed agents, enabled state, and versioned tool policies. Explicit deny takes precedence. The gateway checks customer scope and the assigned HR employee before dispatch. The database stores only hashed opaque session tokens and their expiry. Runtime does not cache allow decisions. Redis enforces fixed windows for login and invocation. Before dispatch, PostgreSQL stores a trace ID, caller, tool version and running status. Successful outcomes require contract-validated downstream data. Failed writes whose effect is uncertain return `UNKNOWN`. Traces persist metadata, rather than caller payloads or free-form service results.
 
 ## Control plane
 
@@ -18,6 +18,7 @@ flowchart LR
     API --> Jobs[("PostgreSQL crawl jobs")]
     API --> Catalog[("PostgreSQL catalog and release history")]
     API --> Eval[("PostgreSQL evaluation runs")]
+    API --> Policy[("PostgreSQL agent, policy, and quota settings")]
     Jobs --> Crawl["Crawler worker"]
     Crawl --> Target["Configured service metadata"]
     Crawl --> Catalog
@@ -35,9 +36,9 @@ The browser and native MCP client share the same runtime policies. Each domain s
 flowchart LR
     Caller["MCP client or Playground"] --> Auth["Session and customer scope"]
     Auth --> Runtime["Gateway runtime"]
-    Runtime --> Catalog[("PostgreSQL active versions and executions")]
+    Runtime --> Catalog[("PostgreSQL active versions, policies, and executions")]
     Runtime --> Quota[("Redis quotas")]
-    Runtime --> REST["Payments and Inventory REST"]
+    Runtime --> REST["Payments, HR, Analytics, and Inventory REST"]
     Runtime --> MCP["Support and Communication MCP"]
     Runtime --> GRPC["IT Operations gRPC"]
     REST --> State[("Isolated domain schemas")]
@@ -222,6 +223,7 @@ The active pointer is a nullable composite reference from the tool ID and active
 ```mermaid
 erDiagram
     EXECUTIONS ||--o| APPROVALS : binds
+    APPROVALS o|..o{ AGENT_RUNS : pauses
     APPROVALS o|..o{ DUPLICATE_WORKFLOWS : follows
     PAYMENT_TRANSACTIONS ||..o{ PAYMENT_REFUNDS : funds
     IT_SERVICES ||..o{ IT_INCIDENTS : reports
@@ -298,8 +300,29 @@ The gateway joins the Compose network and publishes its HTTP port on loopback. P
 | PostgreSQL and Alembic | Transactions coordinate catalog, decision, and execution state. Migrations declare domain roles and schema evolution. |
 | PostgreSQL text search and pgvector | Weighted lexical rank and exact cosine ranking use the same scoped relational dataset. |
 | Redis | Shared quota counters keep rate-limit state separate from the transactional ledger. |
+| LangGraph | Bounded scripted agent steps share the gateway and persist checkpoints without depending on a model provider. |
 | Protobuf and gRPC | Checked-in descriptors define the IT contract and support reproducible stub generation. |
 | React, TypeScript, Vite, and Nginx | A typed console builds to static assets. Nginx serves it and forwards same-origin API requests. |
 | Model2Vec | The pinned CPU model provides local semantic retrieval without an inference service dependency. |
 
 See the [ADR index](adr/README.md) for the tradeoffs and accepted boundaries.
+
+## Agent profiles and governance
+
+Tool discovery, direct schema access, invocation, and approval use the same authorization predicate. The profile bounds services, the active pointer selects the contract, and enabled matching deny rules remove the candidate. Rules are scoped to one principal, tool, and sandbox customer. Resuming approved work checks the requester's current access.
+
+```mermaid
+flowchart LR
+    Admin["Platform administrator"] --> Editor["Policy editor and simulator"]
+    Editor --> Rules[("PostgreSQL rules and revisions")]
+    Agent["Scoped agent identity"] --> Gateway["Gateway runtime"]
+    Rules --> Gateway
+    Gateway --> Decision{"Current grant and policy allow"}
+    Decision -->|Yes| Scope{"Object scope matches"}
+    Decision -->|No| Denied["Record denial"]
+    Scope -->|Yes| Quotas[("Redis counters with PostgreSQL limits")]
+    Scope -->|No| Denied
+    Quotas --> Dispatch["Dispatch or await approval"]
+```
+
+Support, Finance, IT, and HR run deterministic LangGraph scenarios. The worker persists ordered results and execution references, stops on a failure, and resumes an IT workflow only after a terminal approval outcome. Approved restarts update sandbox state and create an idempotent receipt. HR uses locked allowance updates and rejects overlaps. Analytics reads scoped Payments projections and writes reports into its own schema. [ADR 0006](adr/0006-domain-governance-and-scripted-agents.md)

@@ -26,3 +26,7 @@ class Settings(BaseSettings):
     inventory_secret: SecretStr | None = None
 
     embedding_path: Path = Path(".models/discovery")
+
+    hr_password: SecretStr | None = None
+    hr_secret: SecretStr | None = None
+    analytics_secret: SecretStr | None = None

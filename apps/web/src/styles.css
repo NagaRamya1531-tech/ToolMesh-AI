@@ -124,3 +124,6 @@ pre { padding: 12px; background: #11131e; border: 1px solid var(--line); border-
 .invocation-form { margin-top: 16px; }
 .evaluation-details { margin: 12px 0; }
 .evaluation-details .example { border-top: 1px solid var(--line); padding: 0 8px; }
+
+.governance-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,18rem),1fr)); gap:16px; }
+.governance-grid h2 { margin: 0; font-size: 1rem; }

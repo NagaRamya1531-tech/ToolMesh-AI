@@ -49,6 +49,26 @@ class OperationsStub:
                 request_serializer=shared_dot_protos_dot_it__pb2.IncidentRequest.SerializeToString,
                 response_deserializer=shared_dot_protos_dot_it__pb2.Incident.FromString,
                 _registered_method=True)
+        self.GetSystemLogs = channel.unary_unary(
+                '/toolmesh.it.Operations/GetSystemLogs',
+                request_serializer=shared_dot_protos_dot_it__pb2.LogRequest.SerializeToString,
+                response_deserializer=shared_dot_protos_dot_it__pb2.LogList.FromString,
+                _registered_method=True)
+        self.RestartService = channel.unary_unary(
+                '/toolmesh.it.Operations/RestartService',
+                request_serializer=shared_dot_protos_dot_it__pb2.RestartRequest.SerializeToString,
+                response_deserializer=shared_dot_protos_dot_it__pb2.RestartReceipt.FromString,
+                _registered_method=True)
+        self.GetRestartReceipt = channel.unary_unary(
+                '/toolmesh.it.Operations/GetRestartReceipt',
+                request_serializer=shared_dot_protos_dot_it__pb2.RestartRequest.SerializeToString,
+                response_deserializer=shared_dot_protos_dot_it__pb2.RestartReceipt.FromString,
+                _registered_method=True)
+        self.GetDeploymentStatus = channel.unary_unary(
+                '/toolmesh.it.Operations/GetDeploymentStatus',
+                request_serializer=shared_dot_protos_dot_it__pb2.HealthRequest.SerializeToString,
+                response_deserializer=shared_dot_protos_dot_it__pb2.Deployment.FromString,
+                _registered_method=True)
 
 
 class OperationsServicer:
@@ -72,6 +92,30 @@ class OperationsServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetSystemLogs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RestartService(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetRestartReceipt(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetDeploymentStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_OperationsServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -89,6 +133,26 @@ def add_OperationsServicer_to_server(servicer, server):
                     servicer.CreateIncident,
                     request_deserializer=shared_dot_protos_dot_it__pb2.IncidentRequest.FromString,
                     response_serializer=shared_dot_protos_dot_it__pb2.Incident.SerializeToString,
+            ),
+            'GetSystemLogs': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSystemLogs,
+                    request_deserializer=shared_dot_protos_dot_it__pb2.LogRequest.FromString,
+                    response_serializer=shared_dot_protos_dot_it__pb2.LogList.SerializeToString,
+            ),
+            'RestartService': grpc.unary_unary_rpc_method_handler(
+                    servicer.RestartService,
+                    request_deserializer=shared_dot_protos_dot_it__pb2.RestartRequest.FromString,
+                    response_serializer=shared_dot_protos_dot_it__pb2.RestartReceipt.SerializeToString,
+            ),
+            'GetRestartReceipt': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRestartReceipt,
+                    request_deserializer=shared_dot_protos_dot_it__pb2.RestartRequest.FromString,
+                    response_serializer=shared_dot_protos_dot_it__pb2.RestartReceipt.SerializeToString,
+            ),
+            'GetDeploymentStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDeploymentStatus,
+                    request_deserializer=shared_dot_protos_dot_it__pb2.HealthRequest.FromString,
+                    response_serializer=shared_dot_protos_dot_it__pb2.Deployment.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -172,6 +236,114 @@ class Operations:
             '/toolmesh.it.Operations/CreateIncident',
             shared_dot_protos_dot_it__pb2.IncidentRequest.SerializeToString,
             shared_dot_protos_dot_it__pb2.Incident.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSystemLogs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/toolmesh.it.Operations/GetSystemLogs',
+            shared_dot_protos_dot_it__pb2.LogRequest.SerializeToString,
+            shared_dot_protos_dot_it__pb2.LogList.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RestartService(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/toolmesh.it.Operations/RestartService',
+            shared_dot_protos_dot_it__pb2.RestartRequest.SerializeToString,
+            shared_dot_protos_dot_it__pb2.RestartReceipt.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetRestartReceipt(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/toolmesh.it.Operations/GetRestartReceipt',
+            shared_dot_protos_dot_it__pb2.RestartRequest.SerializeToString,
+            shared_dot_protos_dot_it__pb2.RestartReceipt.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDeploymentStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/toolmesh.it.Operations/GetDeploymentStatus',
+            shared_dot_protos_dot_it__pb2.HealthRequest.SerializeToString,
+            shared_dot_protos_dot_it__pb2.Deployment.FromString,
             options,
             channel_credentials,
             insecure,

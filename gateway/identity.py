@@ -23,6 +23,7 @@ class Principal:
     can_write: bool = False
     can_refund: bool = False
     can_approve: bool = False
+    profile: str = "human"
 
     @property
     def can_publish(self) -> bool:
@@ -33,7 +34,17 @@ PRINCIPALS = {
     "platform-admin": Principal(
         "platform-admin",
         "human",
-        frozenset({"payments", "support", "communication", "inventory", "it"}),
+        frozenset(
+            {
+                "payments",
+                "support",
+                "communication",
+                "inventory",
+                "it",
+                "hr",
+                "analytics",
+            }
+        ),
         "C-102",
     ),
     "support-agent": Principal(
@@ -44,7 +55,11 @@ PRINCIPALS = {
         True,
     ),
     "finance-agent": Principal(
-        "finance-agent", "agent", frozenset({"payments"}), "C-102", can_refund=True
+        "finance-agent",
+        "agent",
+        frozenset({"payments", "analytics"}),
+        "C-102",
+        can_refund=True,
     ),
     "refund-approver": Principal(
         "refund-approver", "human", frozenset(), "C-102", can_approve=True
@@ -56,6 +71,40 @@ PRINCIPALS = {
         "payments-agent", "agent", frozenset({"payments"}), "C-102"
     ),
 }
+
+PROFILE_TEMPLATES = {
+    "support": (frozenset({"payments", "support", "communication"}), True),
+    "finance": (frozenset({"payments", "analytics"}), False),
+    "it": (frozenset({"it", "inventory"}), True),
+    "hr": (frozenset({"hr", "communication"}), True),
+    "payments": (frozenset({"payments"}), False),
+}
+
+
+async def resolve_principal(conn, principal_id: str) -> Principal | None:
+    known = PRINCIPALS.get(principal_id)
+    if known and known.kind == "human":
+        return known
+    found = await rows(
+        conn,
+        "SELECT profile FROM agent_accounts WHERE id=:id AND enabled",
+        id=principal_id,
+    )
+    if not found:
+        return None
+    profile = found[0]["profile"]
+    template = PROFILE_TEMPLATES.get(profile)
+    if template is None:
+        return None
+    return Principal(
+        principal_id,
+        "agent",
+        template[0],
+        "C-102",
+        template[1],
+        can_refund=principal_id == "finance-agent",
+        profile=profile,
+    )
 
 
 def digest(token: str) -> str:
@@ -84,12 +133,25 @@ class Identity(TokenVerifier):
         if attempts > 30:
             raise HTTPException(429, "RATE_LIMITED")
         configured = self.passwords.get(username)
-        if configured is None or not hmac.compare_digest(
-            configured.get_secret_value().encode(), password.encode()
-        ):
-            raise HTTPException(401, "INVALID_CREDENTIALS")
         token = secrets.token_urlsafe(32)
         async with self.db.begin() as conn:
+            accounts = await rows(
+                conn,
+                "SELECT credential_hash FROM agent_accounts WHERE id=:id AND enabled FOR SHARE",
+                id=username,
+            )
+            principal = await resolve_principal(conn, username)
+            stored = accounts[0]["credential_hash"] if accounts else None
+            valid = (
+                hmac.compare_digest(stored, digest(password))
+                if stored
+                else configured is not None
+                and hmac.compare_digest(
+                    configured.get_secret_value().encode(), password.encode()
+                )
+            )
+            if not principal or not valid:
+                raise HTTPException(401, "INVALID_CREDENTIALS")
             await execute(conn, "DELETE FROM sessions WHERE expires_at <= now()")
             await execute(
                 conn,
@@ -113,7 +175,9 @@ class Identity(TokenVerifier):
             """,
                 digest=digest(token),
             )
-        principal = PRINCIPALS.get(users[0]["principal"]) if users else None
+            principal = (
+                await resolve_principal(conn, users[0]["principal"]) if users else None
+            )
         if principal is None:
             raise HTTPException(401, "AUTH_REQUIRED")
         return principal

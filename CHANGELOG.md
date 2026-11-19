@@ -1,5 +1,20 @@
 # Changelog
 
+## M5 · Domain breadth and governance
+
+- Completed all 36 specified operations across Payments, Support, IT Operations, HR, Analytics, and Communication. Added masked payment methods, ticket history, simulated restart receipts, HR allowance and leave records, read-only Payments projections for Analytics, and local messaging.
+- Added the Support, Finance, IT, and HR scripted LangGraph profiles with persisted execution steps and approval resumption for IT restarts.
+- Added managed agent accounts, session revocation, versioned principal policy rules, access simulation, configurable Redis quotas, and credential-pattern redaction on projected tool results.
+- Updated the README, architecture and threat model, runbook, ADR index, and console screenshots.
+
+### Verification
+
+- Applied the domain and agent-run migrations through `0008` on a fresh Compose stack and repeated the migration successfully.
+- Fifteen Python checks and eleven Chromium checks passed. The domain suite exercised all 36 required operations, restart approval and health verification, leave balance and overlap rules, report persistence, policy precedence and history, quota responses, and session revocation.
+- Confirmed that Analytics can read its exported Payments projection, its role cannot update Payments transactions, and the gateway role cannot read HR employee records.
+- Early runs exposed a fresh-database ordering issue for the IT service row, a class-method name that shadowed a Python type, and a browser check that raced service loading. Fixed each and reran verification.
+- Locked dependency sync, lint, formatting, type checks, frontend build, secret scan, Mermaid rendering, and repository link checks passed.
+
 ## M4 · Ranked discovery and retrieval evaluation
 
 - Added authorization-prefiltered PostgreSQL full-text search, pgvector cosine ranking with a pinned CPU model, and reciprocal rank fusion in REST, MCP and Playground tool discovery.

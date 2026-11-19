@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from gateway.access import POLICY, scope_params
 from gateway.identity import Principal
 from shared.database import execute, rows
 
@@ -14,17 +15,18 @@ class Catalog:
             return await rows(
                 conn,
                 """
-                SELECT s.*, count(t.id) FILTER (WHERE t.active_version IS NOT NULL
-                   AND ((v.contract->>'risk' = 'read') OR (v.contract->>'risk' = 'write' AND :write) OR (v.contract->>'risk' = 'approval' AND :refund) OR :admin)) AS published_tools
+                SELECT s.*,count(t.id) FILTER (WHERE t.active_version IS NOT NULL AND (:admin OR (
+            """
+                + POLICY
+                + """
+                ))) AS published_tools
                 FROM services s LEFT JOIN tools t ON t.service_id=s.id
                 LEFT JOIN tool_versions v ON v.tool_id=t.id AND v.version=t.active_version
-                WHERE s.id = ANY(CAST(:services AS text[]))
+                WHERE s.id=ANY(CAST(:services AS text[]))
                 GROUP BY s.id ORDER BY s.id
             """,
-                services=list(principal.services),
-                write=principal.can_write,
-                refund=principal.can_refund,
                 admin=principal.can_publish,
+                **scope_params(principal),
             )
 
     async def registry(self, principal: Principal):

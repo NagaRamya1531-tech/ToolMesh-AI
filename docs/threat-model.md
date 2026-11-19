@@ -5,7 +5,7 @@ The local gateway binds to loopback and the console proxies readiness and the au
 | Risk | Controls and remaining exposure |
 |---|---|
 | Credential disclosure | Database credentials come from environment variables. Configuration wraps connection URLs in secret types. Probe responses omit exception details. The local migration account is privileged, and anyone with Docker inspection rights can read container environment variables. |
-| Compromised runtime | The API container uses a non-root UID and the runtime database role lacks domain schema privileges. Payments, Support, Communication, Inventory, and IT Operations each have a separate database login and internal service credential. Redis uses network isolation for this local milestone. |
+| Compromised runtime | The API container uses a non-root UID and the runtime database role lacks domain schema privileges. Payments, Support, Communication, Inventory, IT Operations, HR, and Analytics each have a separate database login and internal service credential. Redis uses network isolation for this local milestone. |
 | Dependency outage | Per-dependency deadlines, bounded connection pools and HTTP 503 allow callers to distinguish outages from process failure. Repeated checks avoid caching stale health responses. |
 | Unauthorized tool access | Every REST and MCP runtime action validates the session and grant. Discovery filters published entries, unknown and denied IDs produce the same availability signal, and the runtime enforces the authorized customer scope. Direct API tests cover several denials. |
 | Malicious input or service response | Request bodies and upstream responses are bounded. Validated Pydantic contracts permit only declared fields. The runtime rechecks the active version, enforces quotas, uses fixed Compose destinations and refuses redirects. The console renders service text as text. |
@@ -20,3 +20,7 @@ Crawler requests are limited to configured target IDs, protocols and ports. Name
 ### Discovery and benchmark boundaries
 
 The ranking query filters service grants, active versions, write permission and the current refund grant before either lexical or vector scoring. It returns scoped names and ranks. Query embeddings run in the API process using a pinned, checksum-verified local artifact. The API startup leaves model provisioning offline, and semantic requests fail visibly when the artifact or index is unavailable. Benchmark definitions reside in an isolated table and cannot be looked up or invoked through the runtime registry. Administrators control evaluation and export of its generated case data.
+
+### Managed access and local domain boundaries
+
+Profiles impose service ceilings. Explicit denies apply to discovery, schema access, invocation, and approval. The HR profile can access its assigned employee, that employee's manager relationship, and its department. Projected domain outputs expose only contract fields. The gateway masks common credential patterns in returned text. These rules do not provide general-purpose PII detection. Analytics receives read-only projections and cannot write to Payments tables. All communications remain local sandbox records.

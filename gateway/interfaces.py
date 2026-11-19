@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
@@ -84,6 +84,7 @@ class SessionToken(BaseModel):
 class CallerIdentity(BaseModel):
     id: str
     kind: str
+    profile: str
 
 
 class ServiceRecord(BaseModel):
@@ -130,6 +131,7 @@ class InvocationResult(BaseModel):
     error_code: str | None
     result: dict | None
     approval_id: UUID | None = None
+    retry_after_seconds: int | None = None
 
 
 class ExecutionRecord(BaseModel):
@@ -175,7 +177,11 @@ def build_api(
 
     @router.get("/auth/me", response_model=CallerIdentity)
     async def me(principal: Principal = Depends(caller)):
-        return {"id": principal.id, "kind": principal.kind}
+        return {
+            "id": principal.id,
+            "kind": principal.kind,
+            "profile": principal.profile,
+        }
 
     @router.post("/auth/logout", status_code=204)
     async def logout(authorization: Annotated[str, Header()] = ""):
@@ -214,8 +220,10 @@ def build_api(
         return await runtime.schema(principal, tool_id, version)
 
     @router.post("/executions", response_model=InvocationResult)
-    async def invoke(body: Invocation, principal: Principal = Depends(caller)):
-        return await runtime.invoke(
+    async def invoke(
+        body: Invocation, response: Response, principal: Principal = Depends(caller)
+    ):
+        result = await runtime.invoke(
             principal,
             body.tool_id,
             body.arguments,
@@ -223,6 +231,9 @@ def build_api(
             body.fields,
             body.idempotency_key,
         )
+        if result.get("retry_after_seconds"):
+            response.headers["Retry-After"] = str(result["retry_after_seconds"])
+        return result
 
     @router.get("/executions", response_model=list[ExecutionRecord])
     async def executions(

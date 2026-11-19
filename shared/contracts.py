@@ -1,20 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
-Identifier = Annotated[
-    str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
-]
-Subject = Annotated[str, Field(min_length=1, max_length=160)]
-
-
-class Contract(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
-
-class Customer(Contract):
-    customer_id: Identifier
+from shared.base_contracts import Contract as Contract
+from shared.base_contracts import Customer as Customer
+from shared.base_contracts import Identifier as Identifier
+from shared.base_contracts import Subject as Subject
+from shared.domain_contracts import DOMAIN_TOOLS
 
 
 class TransactionLookup(Customer):
@@ -154,7 +147,7 @@ def tool_contract(tool_id: str) -> dict:
         "input_schema": arguments.model_json_schema(),
         "output_schema": result.model_json_schema(),
         "risk": "approval"
-        if tool_id == "payments.issue_refund"
+        if tool_id in {"payments.issue_refund", "it.restart_service"}
         else "write"
         if write
         else "read",
@@ -205,3 +198,5 @@ TOOLS.update(
         ),
     }
 )
+
+TOOLS.update(DOMAIN_TOOLS)

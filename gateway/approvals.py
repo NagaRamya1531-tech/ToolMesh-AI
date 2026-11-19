@@ -8,9 +8,11 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from gateway.identity import Principal
+from gateway.access import POLICY, object_allowed, scope_params
+from gateway.identity import Principal, resolve_principal
 from shared.contracts import Refund, tool_contract
 from shared.database import execute, rows
+from shared.domain_contracts import RestartResult
 
 Dispatch = Callable[..., Awaitable[dict]]
 
@@ -39,6 +41,27 @@ class Approvals:
         self.db = db
         self.dispatch = dispatch
 
+    @staticmethod
+    def prefix(tool: str) -> str:
+        return "REFUND" if tool == "payments.issue_refund" else "RESTART"
+
+    @staticmethod
+    async def eligible(conn, principal: Principal, tool: str, version: int, args: dict):
+        if not object_allowed(principal, args):
+            return []
+        return await rows(
+            conn,
+            """
+            SELECT v.contract FROM tools t JOIN tool_versions v ON (v.tool_id,v.version)=(t.id,t.active_version)
+            WHERE t.id=:tool AND t.active_version=:version AND
+        """
+            + POLICY
+            + " FOR SHARE OF t",
+            tool=tool,
+            version=version,
+            **scope_params(principal),
+        )
+
     async def queue(
         self,
         trace: UUID,
@@ -55,14 +78,7 @@ class Approvals:
                 "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
                 key=f"{principal.id}:{tool}:{request_key}",
             )
-            grants = await rows(
-                conn,
-                """
-                SELECT principal FROM refund_grants WHERE principal=:principal AND customer_id=:customer AND enabled
-            """,
-                principal=principal.id,
-                customer=args["customer_id"],
-            )
+            grants = await self.eligible(conn, principal, tool, version, args)
             if not grants:
                 raise HTTPException(404, "TOOL_NOT_AVAILABLE")
             prior = await rows(
@@ -113,7 +129,9 @@ class Approvals:
                 tool=tool,
                 version=version,
             )
-            await event(conn, principal.id, "REFUND_APPROVAL_REQUESTED", trace)
+            await event(
+                conn, principal.id, f"{self.prefix(tool)}_APPROVAL_REQUESTED", trace
+            )
         return {
             "id": trace,
             "status": "PENDING_APPROVAL",
@@ -127,7 +145,7 @@ class Approvals:
             expired = await rows(
                 conn,
                 """
-                UPDATE approvals SET status='EXPIRED' WHERE status='PENDING' AND expires_at <= now() RETURNING id
+                UPDATE approvals SET status='EXPIRED' WHERE status='PENDING' AND expires_at <= now() RETURNING id,tool_id
             """,
             )
             for row in expired:
@@ -136,7 +154,12 @@ class Approvals:
                     "UPDATE executions SET status='EXPIRED',finished_at=now() WHERE id=:id",
                     id=row["id"],
                 )
-                await event(conn, "system", "REFUND_APPROVAL_EXPIRED", row["id"])
+                await event(
+                    conn,
+                    "system",
+                    f"{self.prefix(row['tool_id'])}_APPROVAL_EXPIRED",
+                    row["id"],
+                )
 
     async def list(self, principal: Principal):
         await self.expire()
@@ -148,6 +171,7 @@ class Approvals:
                     a.decided_by,a.decision_reason,e.status AS execution_status,
                     a.arguments->>'customer_id' AS customer_id,
                     a.arguments->>'transaction_id' AS transaction_id,
+                    a.arguments->>'service_id' AS service_id,
                     (a.arguments->>'amount_minor')::int AS amount_minor,a.arguments->>'currency' AS currency
                 FROM approvals a JOIN executions e ON e.id=a.id
                 WHERE a.customer_id=:customer AND (a.requester=:requester OR :reviewer)
@@ -181,19 +205,17 @@ class Approvals:
                 raise HTTPException(409, "APPROVAL_ALREADY_DECIDED")
             status = "REJECTED"
             if approve:
-                checks = await rows(
-                    conn,
-                    """
-                    SELECT v.contract FROM refund_grants g JOIN tools t ON t.id=:tool
-                    JOIN tool_versions v ON v.tool_id=t.id AND v.version=t.active_version
-                    WHERE g.principal=:requester AND g.customer_id=:customer AND g.enabled
-                        AND t.active_version=:version
-                    FOR SHARE OF t
-                """,
-                    tool=item["tool_id"],
-                    requester=item["requester"],
-                    customer=item["customer_id"],
-                    version=item["version"],
+                requester = await resolve_principal(conn, item["requester"])
+                checks = (
+                    await self.eligible(
+                        conn,
+                        requester,
+                        item["tool_id"],
+                        item["version"],
+                        item["arguments"],
+                    )
+                    if requester
+                    else []
                 )
                 if (
                     not checks
@@ -206,7 +228,9 @@ class Approvals:
                         item["arguments"],
                     )
                 ):
-                    raise HTTPException(409, "REFUND_AUTHORIZATION_CHANGED")
+                    raise HTTPException(
+                        409, f"{self.prefix(item['tool_id'])}_AUTHORIZATION_CHANGED"
+                    )
                 status = "APPROVED"
             await execute(
                 conn,
@@ -231,7 +255,12 @@ class Approvals:
                     "UPDATE executions SET status='REJECTED',finished_at=now() WHERE id=:id",
                     id=approval_id,
                 )
-            await event(conn, principal.id, f"REFUND_{status}", approval_id)
+            await event(
+                conn,
+                principal.id,
+                f"{self.prefix(item['tool_id'])}_{status}",
+                approval_id,
+            )
         if approve:
             return await self.apply(item)
         return {
@@ -241,7 +270,7 @@ class Approvals:
             "result": None,
         }
 
-    async def finish(self, id: UUID, status: str, code: str | None):
+    async def finish(self, id: UUID, status: str, code: str | None, tool: str):
         async with self.db.begin() as conn:
             changed = await rows(
                 conn,
@@ -255,7 +284,7 @@ class Approvals:
                 code=code,
             )
             if changed:
-                await event(conn, "system", f"REFUND_{status}", id)
+                await event(conn, "system", f"{self.prefix(tool)}_{status}", id)
 
     async def apply(self, item: dict):
         refund_id = item["id"]
@@ -272,18 +301,19 @@ class Approvals:
             code = str(exc.detail)
         except (TimeoutError, httpx.HTTPError, ValueError, RuntimeError):
             status, code = "UNKNOWN", "UNKNOWN_OUTCOME"
-        await self.finish(refund_id, status, code)
+        await self.finish(refund_id, status, code, item["tool_id"])
         return {"id": refund_id, "status": status, "error_code": code, "result": result}
 
     @staticmethod
     def validate(item: dict, payload: dict):
-        result = Refund.model_validate_json(json.dumps(payload)).model_dump(mode="json")
+        model = Refund if item["tool_id"] == "payments.issue_refund" else RestartResult
+        result = model.model_validate_json(json.dumps(payload)).model_dump(mode="json")
         if (
             result["id"] != str(item["id"])
             or result["status"] != "SUCCEEDED"
             or any(result.get(k) != value for k, value in item["arguments"].items())
         ):
-            raise ValueError("Refund receipt mismatch")
+            raise ValueError("Approval receipt mismatch")
         return result
 
     async def reconcile(self):
@@ -292,7 +322,7 @@ class Approvals:
             candidates = await rows(
                 conn,
                 """
-                SELECT a.id,a.arguments,a.customer_id FROM approvals a JOIN executions e ON e.id=a.id
+                SELECT a.id,a.tool_id,a.arguments,a.customer_id FROM approvals a JOIN executions e ON e.id=a.id
                 WHERE a.status='APPROVED' AND e.status IN ('RUNNING','UNKNOWN') AND a.reconcile_after<=now()
                 ORDER BY a.reconcile_after LIMIT 10 FOR UPDATE OF a SKIP LOCKED
             """,
@@ -307,10 +337,19 @@ class Approvals:
                 )
         for item in candidates:
             try:
-                payload = await self.dispatch(
-                    "payments.get_refund_status",
-                    {"refund_id": str(item["id"]), "customer_id": item["customer_id"]},
-                )
+                if item["tool_id"] == "payments.issue_refund":
+                    payload = await self.dispatch(
+                        "payments.get_refund_status",
+                        {
+                            "refund_id": str(item["id"]),
+                            "customer_id": item["customer_id"],
+                        },
+                    )
+                else:
+                    payload = await self.dispatch(
+                        "it.get_restart_receipt",
+                        {**item["arguments"], "operation_id": str(item["id"])},
+                    )
                 self.validate(item, payload)
             except (
                 HTTPException,
@@ -319,9 +358,11 @@ class Approvals:
                 ValueError,
                 RuntimeError,
             ):
-                await self.finish(item["id"], "UNKNOWN", "UNKNOWN_OUTCOME")
+                await self.finish(
+                    item["id"], "UNKNOWN", "UNKNOWN_OUTCOME", item["tool_id"]
+                )
             else:
-                await self.finish(item["id"], "SUCCEEDED", None)
+                await self.finish(item["id"], "SUCCEEDED", None, item["tool_id"])
 
     async def worker(self):
         while True:

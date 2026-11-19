@@ -5,8 +5,8 @@ import { call } from "./api";
 import { Screen, State, type Session } from "./workspace";
 
 type Approval = {
-  id: string; requester: string; customer_id: string; transaction_id: string;
-  tool_id: string; version: number; currency: string; amount_minor: number;
+  id: string; requester: string; customer_id: string; transaction_id: string|null; service_id: string|null;
+  tool_id: string; version: number; currency: string|null; amount_minor: number|null;
   status: string; execution_status: string; expires_at: string; decided_by: string | null;
   decision_reason: string | null;
 };
@@ -46,7 +46,7 @@ export function Approvals({ session }: { session: Session }) {
       setPending(false);
     }
   }
-  return <Screen name="Approvals" description="Review the exact amount, currency and transaction bound to each sandbox refund request.">
+  return <Screen name="Approvals" description="Review the exact intent bound to a sandbox refund or simulated restart.">
     <label className="filter">Status <select value={status} onChange={(event) => setParams(event.target.value ? { status: event.target.value } : {})}>
       <option value="">All statuses</option>{approvalStatuses.map((value) => <option key={value}>{value}</option>)}
     </select></label>
@@ -54,16 +54,17 @@ export function Approvals({ session }: { session: Session }) {
       {approvals.length === 0 ? <p>No refund approvals in this view.</p> : <div className="panel table-wrap"><table>
         <thead><tr><th scope="col">Transaction</th><th scope="col">Amount (minor units)</th><th scope="col">Approval</th><th scope="col">Execution</th></tr></thead>
         <tbody>{approvals.map((approval) => <tr key={approval.id}>
-          <th scope="row"><Link to={`?status=${status}&approval=${approval.id}`} onClick={() => {setReason(""); setFeedback(null);}}>{approval.transaction_id}</Link></th>
-          <td>{approval.amount_minor.toLocaleString()} {approval.currency}</td><td>{approval.status}</td><td>{approval.execution_status}</td>
+          <th scope="row"><Link to={`?status=${status}&approval=${approval.id}`} onClick={() => {setReason(""); setFeedback(null);}}>{approval.transaction_id ?? approval.service_id}</Link></th>
+          <td>{approval.amount_minor?.toLocaleString() ?? "—"} {approval.currency}</td><td>{approval.status}</td><td>{approval.execution_status}</td>
         </tr>)}</tbody>
       </table></div>}
     </State>
-    {current && <section className="panel detail" aria-label="Refund intent">
-      <h2>Refund intent</h2>
+    {current && <section className="panel detail" aria-label={current.service_id ? "Restart intent" : "Refund intent"}>
+      <h2>{current.service_id ? "Restart intent" : "Refund intent"}</h2>
       <dl>
         <dt>Requester</dt><dd>{current.requester}</dd><dt>Customer</dt><dd>{current.customer_id}</dd>
-        <dt>Transaction</dt><dd>{current.transaction_id}</dd><dt>Amount (minor units)</dt><dd>{current.amount_minor.toLocaleString()} {current.currency}</dd>
+        {current.service_id ? <><dt>Service</dt><dd>{current.service_id}</dd></> :
+          <><dt>Transaction</dt><dd>{current.transaction_id}</dd><dt>Amount (minor units)</dt><dd>{current.amount_minor?.toLocaleString()} {current.currency}</dd></>}
         <dt>Tool version</dt><dd>{current.tool_id} v{current.version}</dd>
         <dt>Expires</dt><dd>{new Date(current.expires_at).toLocaleString()}</dd>
         <dt>Approval</dt><dd>{current.status}</dd><dt>Execution</dt><dd>{current.execution_status}</dd>
@@ -73,8 +74,8 @@ export function Approvals({ session }: { session: Session }) {
       {current.status === "PENDING" && session.id === "refund-approver" && <div className="form-panel compact">
         <label>Decision reason<input required value={reason} maxLength={240} disabled={pending} onChange={(event) => setReason(event.target.value)} /></label>
         <div className="inline-controls">
-          <button disabled={pending || !reason.trim()} onClick={() => void decide("approve")}>Approve refund</button>
-          <button disabled={pending || !reason.trim()} onClick={() => void decide("reject")}>Reject refund</button>
+          <button disabled={pending || !reason.trim()} onClick={() => void decide("approve")}>{current.service_id?"Approve restart":"Approve refund"}</button>
+          <button disabled={pending || !reason.trim()} onClick={() => void decide("reject")}>{current.service_id?"Reject restart":"Reject refund"}</button>
         </div>
       </div>}
       {feedback && <p role={feedback.error ? "alert" : "status"}>{feedback.text}</p>}
@@ -113,8 +114,10 @@ export function Audit({ session }: { session: Session }) {
         <thead><tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Evidence</th></tr></thead>
         <tbody>{events.map((event) => <tr key={event.id}>
           <th scope="row">{new Date(event.created_at).toLocaleString()}</th><td>{event.actor}</td>
-          <td>{event.action}</td><td>{event.action.startsWith("REFUND_")
-            ? <Link to={`/approvals?approval=${event.resource_id}`}>Refund intent</Link>
+          <td>{event.action}</td><td>{(event.action.startsWith("REFUND_")||event.action.startsWith("RESTART_"))
+            ? <Link to={`/approvals?approval=${event.resource_id}`}>Approval intent</Link>
+            : event.action.startsWith("POLICY_") ? <Link to={`/policies?rule=${event.resource_id}`}>Policy history</Link>
+            : event.action==="QUOTAS_UPDATED" ? <Link to="/settings">Quota settings</Link>
             : <Link to={`/executions?trace=${event.resource_id}`}>Execution trace</Link>}</td>
         </tr>)}</tbody>
       </table></div>}

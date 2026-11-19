@@ -167,12 +167,17 @@ async def fetch(host: str, target: Target) -> tuple[dict, list[str]]:
             "CheckServiceHealth": "check_service_health",
             "ListIncidents": "list_incidents",
             "CreateIncident": "create_incident",
+            "GetSystemLogs": "get_system_logs",
+            "RestartService": "restart_service",
+            "GetDeploymentStatus": "get_deployment_status",
         }
         for method in DESCRIPTOR.services_by_name["Operations"].methods:
+            if method.name not in names:
+                continue
             identifier = f"it.{names[method.name]}"
             contract = tool_contract(identifier)
-            if set(contract["input_schema"]["properties"]) != set(
-                method.input_type.fields_by_name
+            if set(contract["input_schema"]["properties"]) != (
+                set(method.input_type.fields_by_name) - {"operation_id"}
             ):
                 skipped.append(method.name)
                 continue

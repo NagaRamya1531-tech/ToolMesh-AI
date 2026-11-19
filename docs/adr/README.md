@@ -7,3 +7,4 @@
 | [0003 · Refund approval and reconciliation](0003-refund-approval-and-reconciliation.md) | Bind exact refund intent, consume approval atomically, and read the ledger to resolve uncertainty. |
 | [0004 · Allowlisted crawler and gRPC](0004-allowlisted-crawler-and-grpc.md) | Constrain discovery to configured targets and use checked-in Protobuf descriptors. |
 | [0005 · Authorization-prefiltered discovery](0005-authorization-prefiltered-discovery.md) | Apply access policy before lexical or vector scoring and isolate the benchmark corpus. |
+| [0006 · Domain governance and scripted agents](0006-domain-governance-and-scripted-agents.md) | Apply versioned policy across the six service domains and persist bounded agent execution steps. |

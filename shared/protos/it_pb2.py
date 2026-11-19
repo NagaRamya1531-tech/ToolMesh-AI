@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16shared/protos/it.proto\x12\x0btoolmesh.it\"&\n\x0f\x43ustomerRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\"8\n\rHealthRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\"3\n\rServiceHealth\x12\x12\n\nservice_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"I\n\x0fIncidentRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\"I\n\x08Incident\x12\n\n\x02id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\x12\x0e\n\x06status\x18\x04 \x01(\t\"8\n\x0cIncidentList\x12(\n\tincidents\x18\x01 \x03(\x0b\x32\x15.toolmesh.it.Incident2\xeb\x01\n\nOperations\x12L\n\x12\x43heckServiceHealth\x12\x1a.toolmesh.it.HealthRequest\x1a\x1a.toolmesh.it.ServiceHealth\x12H\n\rListIncidents\x12\x1c.toolmesh.it.CustomerRequest\x1a\x19.toolmesh.it.IncidentList\x12\x45\n\x0e\x43reateIncident\x12\x1c.toolmesh.it.IncidentRequest\x1a\x15.toolmesh.it.Incidentb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16shared/protos/it.proto\x12\x0btoolmesh.it\"&\n\x0f\x43ustomerRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\"8\n\rHealthRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\"3\n\rServiceHealth\x12\x12\n\nservice_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\"I\n\x0fIncidentRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\"I\n\x08Incident\x12\n\n\x02id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\r\n\x05title\x18\x03 \x01(\t\x12\x0e\n\x06status\x18\x04 \x01(\t\"8\n\x0cIncidentList\x12(\n\tincidents\x18\x01 \x03(\x0b\x32\x15.toolmesh.it.Incident\"S\n\nLogRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\r\n\x05level\x18\x03 \x01(\t\x12\r\n\x05limit\x18\x04 \x01(\x05\"=\n\x08LogEntry\x12\x11\n\ttimestamp\x18\x01 \x01(\t\x12\r\n\x05level\x18\x02 \x01(\t\x12\x0f\n\x07message\x18\x03 \x01(\t\".\n\x07LogList\x12#\n\x04logs\x18\x01 \x03(\x0b\x32\x15.toolmesh.it.LogEntry\"O\n\x0eRestartRequest\x12\x13\n\x0b\x63ustomer_id\x18\x01 \x01(\t\x12\x12\n\nservice_id\x18\x02 \x01(\t\x12\x14\n\x0coperation_id\x18\x03 \x01(\t\"U\n\x0eRestartReceipt\x12\n\n\x02id\x18\x01 \x01(\t\x12\x13\n\x0b\x63ustomer_id\x18\x02 \x01(\t\x12\x12\n\nservice_id\x18\x03 \x01(\t\x12\x0e\n\x06status\x18\x04 \x01(\t\"A\n\nDeployment\x12\x12\n\nservice_id\x18\x01 \x01(\t\x12\x0f\n\x07release\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t2\x92\x04\n\nOperations\x12L\n\x12\x43heckServiceHealth\x12\x1a.toolmesh.it.HealthRequest\x1a\x1a.toolmesh.it.ServiceHealth\x12H\n\rListIncidents\x12\x1c.toolmesh.it.CustomerRequest\x1a\x19.toolmesh.it.IncidentList\x12\x45\n\x0e\x43reateIncident\x12\x1c.toolmesh.it.IncidentRequest\x1a\x15.toolmesh.it.Incident\x12>\n\rGetSystemLogs\x12\x17.toolmesh.it.LogRequest\x1a\x14.toolmesh.it.LogList\x12J\n\x0eRestartService\x12\x1b.toolmesh.it.RestartRequest\x1a\x1b.toolmesh.it.RestartReceipt\x12M\n\x11GetRestartReceipt\x12\x1b.toolmesh.it.RestartRequest\x1a\x1b.toolmesh.it.RestartReceipt\x12J\n\x13GetDeploymentStatus\x12\x1a.toolmesh.it.HealthRequest\x1a\x17.toolmesh.it.Deploymentb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -43,6 +43,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_INCIDENT']._serialized_end=338
   _globals['_INCIDENTLIST']._serialized_start=340
   _globals['_INCIDENTLIST']._serialized_end=396
-  _globals['_OPERATIONS']._serialized_start=399
-  _globals['_OPERATIONS']._serialized_end=634
+  _globals['_LOGREQUEST']._serialized_start=398
+  _globals['_LOGREQUEST']._serialized_end=481
+  _globals['_LOGENTRY']._serialized_start=483
+  _globals['_LOGENTRY']._serialized_end=544
+  _globals['_LOGLIST']._serialized_start=546
+  _globals['_LOGLIST']._serialized_end=592
+  _globals['_RESTARTREQUEST']._serialized_start=594
+  _globals['_RESTARTREQUEST']._serialized_end=673
+  _globals['_RESTARTRECEIPT']._serialized_start=675
+  _globals['_RESTARTRECEIPT']._serialized_end=760
+  _globals['_DEPLOYMENT']._serialized_start=762
+  _globals['_DEPLOYMENT']._serialized_end=827
+  _globals['_OPERATIONS']._serialized_start=830
+  _globals['_OPERATIONS']._serialized_end=1360
 # @@protoc_insertion_point(module_scope)

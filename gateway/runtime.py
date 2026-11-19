@@ -14,17 +14,19 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from control_plane.sources import resolve
+from gateway.access import POLICY, object_allowed, scope_params
 from gateway.approvals import Approvals, event
 from gateway.discovery import Discovery, Strategy
 from gateway.grpc_adapter import call_it
 from gateway.identity import Principal
+from gateway.redaction import redact
 from shared.contracts import TOOLS, tool_contract
 from shared.database import execute, rows
 
 CATALOG = """
     SELECT t.id, t.service_id, t.active_version AS version, v.contract
     FROM tools t JOIN tool_versions v ON (v.tool_id, v.version) = (t.id, t.active_version)
-    WHERE t.service_id = ANY(CAST(:services AS text[]))
+    WHERE
 """
 
 
@@ -39,6 +41,8 @@ class Runtime:
         inventory_secret: str = "",
         it_secret: str = "",
         discovery: Discovery | None = None,
+        hr_secret: str = "",
+        analytics_secret: str = "",
     ):
         self.db = db
         self.redis = redis
@@ -47,6 +51,8 @@ class Runtime:
         self.communication_secret = communication_secret
         self.inventory_secret = inventory_secret
         self.it_secret = it_secret
+        self.hr_secret = hr_secret
+        self.analytics_secret = analytics_secret
         self.approvals = Approvals(db, self.downstream)
         self.discovery = discovery
 
@@ -67,22 +73,16 @@ class Runtime:
             return await rows(
                 conn,
                 """
-                SELECT s.id, s.name, s.protocol FROM services s
-                WHERE s.id = ANY(CAST(:services AS text[]))
-                  AND (strpos(lower(s.name || ' ' || s.id), lower(:query)) > 0 OR :query = '')
-                  AND EXISTS (SELECT 1 FROM tools t JOIN tool_versions v
-                    ON (v.tool_id, v.version) = (t.id, t.active_version)
-                    WHERE t.service_id=s.id AND ((v.contract->>'risk' = 'read') OR (v.contract->>'risk' = 'write' AND :can_write)
-                    OR (v.contract->>'risk' = 'approval' AND EXISTS (
-                        SELECT 1 FROM refund_grants WHERE principal=:principal AND enabled AND customer_id=:customer))))
-                ORDER BY s.id LIMIT :limit
-            """,
-                services=list(principal.services),
+                SELECT s.id,s.name,s.protocol FROM services s
+                WHERE (strpos(lower(s.name||' '||s.id),lower(:query))>0 OR :query='')
+                AND EXISTS (SELECT 1 FROM tools t JOIN tool_versions v ON (v.tool_id,v.version)=(t.id,t.active_version)
+                    WHERE t.service_id=s.id AND
+            """
+                + POLICY
+                + """) ORDER BY s.id LIMIT :limit""",
                 query=query,
                 limit=limit,
-                can_write=principal.can_write,
-                principal=principal.id,
-                customer=principal.customer,
+                **scope_params(principal),
             )
 
     async def schema(self, principal: Principal, tool_id: str, version: int | None):
@@ -90,24 +90,25 @@ class Runtime:
             found = await rows(
                 conn,
                 CATALOG
+                + POLICY
                 + """
                 AND t.id=:id AND (CAST(:version AS integer) IS NULL OR t.active_version=CAST(:version AS integer))
-                AND ((v.contract->>'risk' = 'read') OR (v.contract->>'risk' = 'write' AND :can_write)
-                    OR (v.contract->>'risk' = 'approval' AND EXISTS (
-                        SELECT 1 FROM refund_grants WHERE principal=:principal AND enabled AND customer_id=:customer)))
             """,
-                services=list(principal.services),
                 id=tool_id,
                 version=version,
-                can_write=principal.can_write,
-                principal=principal.id,
-                customer=principal.customer,
+                **scope_params(principal),
             )
         if not found:
             raise HTTPException(404, "TOOL_NOT_AVAILABLE")
         return found[0]
 
     async def quota(self, principal: Principal, tool_id: str) -> None:
+        async with self.db.connect() as conn:
+            policy = (
+                await rows(
+                    conn, "SELECT per_tool,global_limit FROM quota_settings WHERE id"
+                )
+            )[0]
         try:
             async with asyncio.timeout(1):
                 allowed = await self.redis.eval(
@@ -123,8 +124,8 @@ class Runtime:
                     2,
                     "toolmesh:global",
                     f"toolmesh:invoke:{principal.id}:{tool_id}",
-                    300,
-                    30,
+                    policy["global_limit"],
+                    policy["per_tool"],
                 )
         except (TimeoutError, RedisError):
             raise HTTPException(503, "QUOTA_UNAVAILABLE") from None
@@ -137,20 +138,25 @@ class Runtime:
         service, operation = tool_id.split(".", 1)
         async with asyncio.timeout(5):
             if service == "it":
+                if operation == "restart_service":
+                    if refund_id is None:
+                        raise HTTPException(403, "APPROVAL_REQUIRED")
+                    args = {**args, "operation_id": str(refund_id)}
                 return await call_it(
                     await resolve("it", 50051), self.it_secret, operation, args
                 )
-            if service in {"payments", "inventory"}:
+            if service in {"payments", "inventory", "hr", "analytics"}:
                 address = (
                     await resolve(service, 8000)
-                    if service == "inventory"
+                    if service != "payments"
                     else "payments"
                 )
-                secret = (
-                    self.payments_secret
-                    if service == "payments"
-                    else self.inventory_secret
-                )
+                secret = {
+                    "payments": self.payments_secret,
+                    "inventory": self.inventory_secret,
+                    "hr": self.hr_secret,
+                    "analytics": self.analytics_secret,
+                }[service]
                 if operation == "issue_refund" and refund_id is None:
                     raise HTTPException(403, "APPROVAL_REQUIRED")
                 extra = {"X-Refund-ID": str(refund_id)} if refund_id is not None else {}
@@ -169,8 +175,26 @@ class Runtime:
                     ) as response:
                         if response.status_code == 404:
                             raise HTTPException(404, "RECORD_NOT_AVAILABLE")
-                        if response.status_code == 409:
-                            raise HTTPException(409, "REFUND_CONFLICT")
+                        if response.status_code in {409, 422}:
+                            safe = {
+                                "REFUND_CONFLICT",
+                                "LEAVE_CONFLICT",
+                                "INVALID_LEAVE_DATES",
+                                "INVALID_REPORTING_WINDOW",
+                            }
+                            detail = (
+                                (await response.aread())
+                                if response.headers.get("content-length", "").isdigit()
+                                and int(response.headers["content-length"]) < 2048
+                                else b"{}"
+                            )
+                            code = json.loads(detail).get("detail")
+                            raise HTTPException(
+                                response.status_code,
+                                code
+                                if isinstance(code, str) and code in safe
+                                else "INVALID_ARGUMENT",
+                            )
                         response.raise_for_status()
                         if (
                             response.headers.get("content-encoding", "identity")
@@ -205,6 +229,13 @@ class Runtime:
                             == "RECORD_NOT_AVAILABLE"
                         ):
                             raise HTTPException(404, "RECORD_NOT_AVAILABLE")
+                        message = (
+                            getattr(result.content[0], "text", "")
+                            if result.content
+                            else ""
+                        )
+                        if message in {"INVALID_TICKET_TRANSITION", "CHANNEL_EXISTS"}:
+                            raise HTTPException(409, message)
                         raise HTTPException(502, "UPSTREAM_ERROR")
                     return result.structured_content or {}
         raise HTTPException(404, "TOOL_NOT_AVAILABLE")
@@ -258,11 +289,11 @@ class Runtime:
                     raise HTTPException(422, "INVALID_ARGUMENT") from None
             if fields and not set(fields).issubset(permitted):
                 raise HTTPException(422, "INVALID_ARGUMENT")
-            if args["customer_id"] != principal.customer:
+            if not object_allowed(principal, args):
                 raise HTTPException(404, "TOOL_NOT_AVAILABLE")
             await self.quota(principal, tool_id)
             await self.schema(principal, tool_id, selected["version"])
-            if tool_id == "payments.issue_refund":
+            if definition["risk"] == "approval":
                 if not idempotency_key:
                     raise HTTPException(422, "IDEMPOTENCY_KEY_REQUIRED")
                 queued = await self.approvals.queue(
@@ -275,6 +306,8 @@ class Runtime:
                 )
                 status = "QUEUED"
                 return queued
+            if tool_id == "communication.notify_leave":
+                await self.downstream("hr.leave_status", args)
             if tool_id in {"communication.send_notification", "support.resolve_ticket"}:
                 await self.confirm_refund(tool_id, args)
             async with self.db.begin() as conn:
@@ -297,6 +330,7 @@ class Runtime:
                 result = output_model.model_validate_json(
                     json.dumps(payload)
                 ).model_dump(mode="json")
+            result = redact(result)
             if fields:
                 result = {field: result[field] for field in fields}
             status = "SUCCEEDED"
@@ -314,7 +348,21 @@ class Runtime:
             code = "UPSTREAM_ERROR"
         finally:
             if status == "RUNNING" and code is not None:
-                status = "UNKNOWN" if write else "FAILED"
+                status = (
+                    "UNKNOWN"
+                    if write
+                    and code
+                    not in {
+                        "RECORD_NOT_AVAILABLE",
+                        "INVALID_ARGUMENT",
+                        "LEAVE_CONFLICT",
+                        "INVALID_LEAVE_DATES",
+                        "INVALID_REPORTING_WINDOW",
+                        "CHANNEL_EXISTS",
+                        "INVALID_TICKET_TRANSITION",
+                    }
+                    else "FAILED"
+                )
             if status not in {"RUNNING", "QUEUED"}:
                 if code == "TOOL_NOT_AVAILABLE":
                     selected = None
@@ -346,6 +394,7 @@ class Runtime:
             "id": str(trace),
             "status": status,
             "error_code": code,
+            "retry_after_seconds": 60 if code == "RATE_LIMITED" else None,
             "result": result,
         }
 

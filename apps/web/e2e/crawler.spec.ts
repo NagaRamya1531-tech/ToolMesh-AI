@@ -6,11 +6,13 @@ test("register an allowlisted service, crawl gRPC descriptors and invoke the pub
   await page.getByLabel("Password").fill(process.env.TOOLMESH_ADMIN_PASSWORD ?? "local_admin_password");
   await page.getByRole("button",{name:"Sign in",exact:true}).click();
   await expect(page.getByRole("heading",{name:"Services",exact:true})).toBeVisible();
-  if (!(await page.getByRole("link",{name:"IT Operations",exact:true}).isVisible())) {
+  await expect(page.getByRole("link",{name:"Payments",exact:true})).toBeVisible();
+  if (!(await page.getByRole("link",{name:"Sandbox Inventory",exact:true}).isVisible())) {
     await page.getByText("Register a service",{exact:true}).click();
-    await page.getByRole("combobox",{name:"Allowlisted target"}).selectOption("it");
-    await page.getByLabel("Display name").fill("IT Operations");
+    await page.getByRole("combobox",{name:"Allowlisted target"}).selectOption("inventory");
+    await page.getByLabel("Display name").fill("Sandbox Inventory");
     await page.getByRole("button",{name:"Register service"}).click();
+    await expect(page.getByRole("link",{name:"Sandbox Inventory",exact:true})).toBeVisible();
   }
   await page.getByRole("link",{name:"IT Operations",exact:true}).click();
   await page.getByRole("button",{name:"Test connection"}).click();

@@ -16,6 +16,7 @@ from shared.contracts import (
     Transactions,
 )
 from shared.database import rows
+from shared.domain_contracts import MethodLookup, PaymentMethod
 
 
 def create_app() -> FastAPI:
@@ -59,7 +60,7 @@ def create_app() -> FastAPI:
             values = await rows(
                 conn,
                 """
-                SELECT * FROM payments.transactions WHERE id=:transaction_id AND customer_id=:customer_id
+                SELECT id,customer_id,order_id,amount_minor,currency,status,installment FROM payments.transactions WHERE id=:transaction_id AND customer_id=:customer_id
             """,
                 **args.model_dump(),
             )
@@ -73,7 +74,7 @@ def create_app() -> FastAPI:
             values = await rows(
                 conn,
                 """
-                SELECT * FROM payments.transactions WHERE customer_id=:customer_id ORDER BY id LIMIT 50
+                SELECT id,customer_id,order_id,amount_minor,currency,status,installment FROM payments.transactions WHERE customer_id=:customer_id ORDER BY id LIMIT 50
             """,
                 **args.model_dump(),
             )
@@ -98,6 +99,21 @@ def create_app() -> FastAPI:
             duplicate_capture_detected=bool(values),
             groups=[value["ids"] for value in values],
         )
+
+    @app.post("/get_payment_method", dependencies=[Depends(authenticate)])
+    async def payment_method(args: MethodLookup) -> PaymentMethod:
+        async with db.connect() as conn:
+            found = await rows(
+                conn,
+                """
+                SELECT m.brand,m.last_four FROM payments.methods m JOIN payments.transactions t ON t.id=m.transaction_id
+                WHERE t.id=:transaction_id AND t.customer_id=:customer_id
+            """,
+                **args.model_dump(),
+            )
+        if not found:
+            raise HTTPException(404, "RECORD_NOT_AVAILABLE")
+        return PaymentMethod.model_validate(found[0])
 
     app.include_router(routes(db, authenticate))
     return app

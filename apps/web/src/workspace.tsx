@@ -6,7 +6,7 @@ import { ServiceActions, ServiceRegistration } from "./crawler";
 import { Screen, State } from "./screen";
 export { Screen, State } from "./screen";
 
-export type Session = { token: string; id: string; kind: "human" | "agent" };
+export type Session = { token: string; id: string; kind: "human" | "agent"; profile:string };
 type Service = { id: string; name: string; protocol: string; owner: string; published_tools: number; health: string; checked_at: string|null; health_error: string|null };
 type Tool = { id: string; service_id: string; version: number; description: string; risk: string; rank: number };
 type Contract = { description: string; input_schema: object; output_schema: object; risk: string };
@@ -22,6 +22,7 @@ function message(error: unknown) {
 }
 
 export function SignIn({ onSession }: { onSession: (session: Session) => void }) {
+  const [identity,setIdentity]=useState("platform-admin");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -31,7 +32,7 @@ export function SignIn({ onSession }: { onSession: (session: Session) => void })
     setError("");
     try {
       const { access_token } = await call<{ access_token: string }>("/auth/login", undefined, {
-        username: form.get("username"), password: form.get("password"),
+        username: identity==="managed" ? form.get("agent-id") : identity, password: form.get("password"),
       });
       const who = await call<Omit<Session, "token">>("/auth/me", access_token);
       onSession({ token: access_token, ...who });
@@ -43,13 +44,14 @@ export function SignIn({ onSession }: { onSession: (session: Session) => void })
   }
   return <Screen name="Sign in" description="Use a local sandbox identity to access the catalog and runtime.">
     <form className="panel form-panel" onSubmit={submit}>
-      <label>Identity<select name="username">
+      <label>Identity<select name="username" value={identity} onChange={(event)=>setIdentity(event.target.value)}>
         <option value="platform-admin">Platform administrator</option>
         <option value="support-agent">Support agent</option>
         <option value="payments-agent">Payments agent</option>
         <option value="finance-agent">Finance agent</option>
-        <option value="refund-approver">Refund approver</option><option value="it-agent">IT agent</option>
+        <option value="refund-approver">Refund approver</option><option value="it-agent">IT agent</option><option value="hr-agent">HR agent</option><option value="managed">Managed agent</option>
       </select></label>
+      {identity==="managed" && <label>Managed agent ID<input name="agent-id" required /></label>}
       <label>Password<input name="password" type="password" autoComplete="current-password" maxLength={256} required /></label>
       {error && <p role="alert" className="warning">{error}</p>}
       <button disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
@@ -157,7 +159,7 @@ export function Registry({ session }: { session: Session }) {
   }
   return <Screen name="Registry" description={admin ? "Review immutable drafts and publish approved tool contracts." : "Inspect published tool contracts within your assigned scope."}>
     <label className="filter">Service <select value={service} onChange={(event) => setParams(event.target.value ? { service: event.target.value } : {})}>
-      <option value="">All services</option><option value="payments">Payments</option><option value="support">Support</option><option value="communication">Communication</option><option value="inventory">Inventory</option><option value="it">IT Operations</option>
+      <option value="">All services</option><option value="payments">Payments</option><option value="support">Support</option><option value="communication">Communication</option><option value="inventory">Inventory</option><option value="it">IT Operations</option><option value="hr">Human Resources</option><option value="analytics">Analytics</option>
     </select></label>
     {notice && <p role="status" className="ok">{notice}</p>}
     <State loading={query.isPending} error={query.error} retry={query.refetch}>
@@ -251,6 +253,7 @@ export function Playground({ session }: { session: Session }) {
   }
   return <Screen name="Playground" description="Run one published sandbox tool using the signed-in identity.">
     <p><Link to="/playground/duplicate-payment">Open scripted duplicate-payment workflow</Link></p>
+    <p><Link to="/playground/scenarios">Open agent scenarios</Link></p>
     <form className="panel form-panel" onSubmit={(event)=>{
       event.preventDefault();setSelected("");setRun(null);setError("");setDiscovery(draft);
     }}>

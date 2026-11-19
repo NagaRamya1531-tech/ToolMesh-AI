@@ -55,3 +55,18 @@ An absent receipt leaves the refund execution uncertain. Ordinary writes do not 
 ## Reproduce an evaluation
 
 [Discovery evaluation methodology and raw results](discovery-evaluation.md) documents the pinned model, dataset split, expected files and exact commands. Evaluation runs are administrator-only and use an isolated synthetic corpus.
+
+## Run scripted agent scenarios
+
+Publish the relevant versioned contracts in Registry before running a scenario. Crawl IT from AutoCrawler if its original health and incident contracts have not been discovered.
+
+| Sandbox identity | Scenario |
+|---|---|
+| `support-agent` | Read the customer and transactions, then inspect duplicate evidence for `O-102`. Use the separate duplicate-payment workflow for the Finance and approver handoff. |
+| `finance-agent` | Compare the seeded November 2026 and October 2026 periods and persist a report. |
+| `it-agent` | Inspect `sandbox-api` health and ERROR logs, record an incident, and wait for restart approval. |
+| `hr-agent` | Request future leave for `E-102` and record a simulated notification after confirmation. |
+
+Open **Playground → Agent scenarios**, enter the requested arguments, and inspect the ordered execution links. For the IT run, sign in separately as `refund-approver`, approve the restart in **Approvals**, then return as the initiating agent and select **Resume after decision**. The final health step verifies the persisted simulated state.
+
+A platform administrator can create an agent in **Agents**, configure an operation-specific rule and run **Simulate** in **Policies**, or update the quotas in **Settings**. Simulation checks access and object scope without invoking a tool.

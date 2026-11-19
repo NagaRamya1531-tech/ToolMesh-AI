@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 from secrets import compare_digest
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastmcp import FastMCP
@@ -11,7 +12,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from shared.contracts import Identifier, ResolvedTicket, Subject, Ticket, Tickets
-from shared.database import rows
+from shared.database import execute, rows
+from shared.domain_contracts import CustomerRecord, TicketState
 
 
 class InternalVerifier(TokenVerifier):
@@ -143,7 +145,7 @@ def create_app():
                 """
                 UPDATE support.tickets SET status='resolved',refund_id=:refund
                 WHERE id=:id AND customer_id=:customer
-                  AND (status='open' OR (status='resolved' AND refund_id=:refund))
+                  AND (status IN ('open','investigating','escalated') OR (status='resolved' AND refund_id=:refund))
                 RETURNING id AS ticket_id, customer_id,refund_id,status
             """,
                 id=ticket_id,
@@ -153,6 +155,62 @@ def create_app():
         if not found:
             raise ToolError("RECORD_NOT_AVAILABLE")
         return ResolvedTicket.model_validate(found[0])
+
+    @server.tool
+    async def get_customer(customer_id: Identifier) -> CustomerRecord:
+        async with db.connect() as conn:
+            found = await rows(
+                conn,
+                "SELECT customer_id,display_name,status FROM support.customers WHERE customer_id=:id",
+                id=customer_id,
+            )
+        if not found:
+            raise ToolError("RECORD_NOT_AVAILABLE")
+        return CustomerRecord.model_validate(found[0])
+
+    async def transition(
+        customer_id: str, ticket_id: UUID, status: str, note: str
+    ) -> TicketState:
+        sources = {
+            "investigating": ["open"],
+            "escalated": ["open", "investigating"],
+            "resolved": ["investigating", "escalated"],
+        }
+        async with db.begin() as conn:
+            await execute(
+                conn, "SELECT set_config('toolmesh.ticket_note',:note,true)", note=note
+            )
+            found = await rows(
+                conn,
+                """
+                UPDATE support.tickets SET status=:status
+                WHERE customer_id=:customer AND id=:id AND status=ANY(CAST(:sources AS text[]))
+                  AND (:status<>'resolved' OR duplicate_transactions IS NULL)
+                RETURNING id AS ticket_id,status
+            """,
+                customer=customer_id,
+                id=ticket_id,
+                status=status,
+                sources=sources[status],
+            )
+        if not found:
+            raise ToolError("INVALID_TICKET_TRANSITION")
+        return TicketState.model_validate(found[0])
+
+    @server.tool
+    async def update_ticket(
+        customer_id: Identifier,
+        ticket_id: UUID,
+        note: Subject,
+        status: Literal["investigating", "resolved"],
+    ) -> TicketState:
+        return await transition(customer_id, ticket_id, status, note)
+
+    @server.tool
+    async def escalate_ticket(
+        customer_id: Identifier, ticket_id: UUID, note: Subject
+    ) -> TicketState:
+        return await transition(customer_id, ticket_id, "escalated", note)
 
     async def health(_):
         async with db.connect() as conn:

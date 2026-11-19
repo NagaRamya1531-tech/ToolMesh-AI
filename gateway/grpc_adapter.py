@@ -9,6 +9,10 @@ METHODS = {
     "check_service_health": ("CheckServiceHealth", pb.HealthRequest),
     "list_incidents": ("ListIncidents", pb.CustomerRequest),
     "create_incident": ("CreateIncident", pb.IncidentRequest),
+    "get_system_logs": ("GetSystemLogs", pb.LogRequest),
+    "restart_service": ("RestartService", pb.RestartRequest),
+    "get_restart_receipt": ("GetRestartReceipt", pb.RestartRequest),
+    "get_deployment_status": ("GetDeploymentStatus", pb.HealthRequest),
 }
 
 
@@ -36,6 +40,10 @@ async def call_it(address: str, secret: str, operation: str, args: dict) -> dict
         code = exc.code()
         if code == grpc.StatusCode.NOT_FOUND:
             raise HTTPException(404, "RECORD_NOT_AVAILABLE") from None
+        if code == grpc.StatusCode.ALREADY_EXISTS:
+            raise HTTPException(409, "RESTART_CONFLICT") from None
+        if code == grpc.StatusCode.INVALID_ARGUMENT:
+            raise HTTPException(422, "INVALID_ARGUMENT") from None
         if code == grpc.StatusCode.DEADLINE_EXCEEDED:
             raise HTTPException(504, "UPSTREAM_TIMEOUT") from None
         raise HTTPException(502, "UPSTREAM_ERROR") from None
