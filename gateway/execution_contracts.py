@@ -123,6 +123,7 @@ class SyntheticOutcome(Record):
     operation_id: UUID
     result: Literal["EFFECT_COMMITTED", "DEFINITIVE_NO_EFFECT"]
     attestation: Digest = Field(repr=False)
+    intent_binding: Digest | None = Field(default=None, repr=False)
 
 
 class PreSendTransition(Record):

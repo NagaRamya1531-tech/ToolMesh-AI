@@ -26,19 +26,21 @@ class SyntheticAdapter:
             await execute(
                 conn,
                 """
-                CREATE FUNCTION public.protect_synthetic_consumption() RETURNS trigger
+                CREATE FUNCTION public.protect_synthetic_dispatch_evidence() RETURNS trigger
                 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
                 BEGIN
                     IF TG_OP = 'TRUNCATE' THEN
                         IF EXISTS (SELECT 1 FROM public.audit_events
-                                   WHERE action = 'SYNTHETIC_INVOCATION_CONSUMED') THEN
+                                   WHERE (action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                               OR starts_with(action, 'SYNTHETIC_SEND_MARKED:'))) THEN
                             RAISE EXCEPTION USING ERRCODE = '42501',
                                 MESSAGE = 'synthetic consumption evidence is protected';
                         END IF;
                         RETURN NULL;
                     END IF;
                     IF TG_OP = 'INSERT' THEN
-                        IF NEW.action = 'SYNTHETIC_INVOCATION_CONSUMED'
+                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                               OR starts_with(NEW.action, 'SYNTHETIC_SEND_MARKED:'))
                            AND current_user <> pg_get_userbyid((
                                SELECT relowner FROM pg_class WHERE oid = TG_RELID
                            )) THEN
@@ -47,12 +49,14 @@ class SyntheticAdapter:
                         END IF;
                         RETURN NEW;
                     END IF;
-                    IF OLD.action = 'SYNTHETIC_INVOCATION_CONSUMED' THEN
+                    IF (OLD.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                               OR starts_with(OLD.action, 'SYNTHETIC_SEND_MARKED:')) THEN
                         RAISE EXCEPTION USING ERRCODE = '42501',
                             MESSAGE = 'synthetic consumption evidence is protected';
                     END IF;
                     IF TG_OP = 'UPDATE' THEN
-                        IF NEW.action = 'SYNTHETIC_INVOCATION_CONSUMED' THEN
+                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                               OR starts_with(NEW.action, 'SYNTHETIC_SEND_MARKED:')) THEN
                             RAISE EXCEPTION USING ERRCODE = '42501',
                                 MESSAGE = 'synthetic consumption evidence is protected';
                         END IF;
@@ -68,7 +72,7 @@ class SyntheticAdapter:
                 """
                 CREATE TRIGGER protect_synthetic_consumption_rows
                 BEFORE INSERT OR UPDATE OR DELETE ON public.audit_events FOR EACH ROW
-                EXECUTE FUNCTION public.protect_synthetic_consumption()
+                EXECUTE FUNCTION public.protect_synthetic_dispatch_evidence()
                 """,
             )
             await execute(
@@ -76,7 +80,7 @@ class SyntheticAdapter:
                 """
                 CREATE TRIGGER protect_synthetic_consumption_truncate
                 BEFORE TRUNCATE ON public.audit_events FOR EACH STATEMENT
-                EXECUTE FUNCTION public.protect_synthetic_consumption()
+                EXECUTE FUNCTION public.protect_synthetic_dispatch_evidence()
                 """,
             )
             for trigger in (
@@ -112,7 +116,9 @@ class SyntheticAdapter:
                 conn,
                 "DROP TRIGGER protect_synthetic_consumption_truncate ON public.audit_events",
             )
-            await execute(conn, "DROP FUNCTION public.protect_synthetic_consumption()")
+            await execute(
+                conn, "DROP FUNCTION public.protect_synthetic_dispatch_evidence()"
+            )
             await execute(conn, "DROP TABLE synthetic_arrivals, synthetic_outcomes")
 
     async def invoke(

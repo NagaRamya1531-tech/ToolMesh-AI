@@ -1,5 +1,10 @@
 # Changelog
 
+## M9.1.4 · Synthetic refund sandbox
+
+- Added a test-only refund flow with authorization revalidation, single-use invocation permission, independently persisted effect evidence, and fenced finalization.
+- Recovery can verify evidence without sending again. IT restart integration remains planned.
+
 ## M9.1.4 · Standalone ownership sandbox
 
 - Added an opt-in worker for PostgreSQL claim, renewal, fenced shutdown, and unmarked recovery. Startup requires schema revision 0011 and never runs migrations.

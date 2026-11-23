@@ -1,11 +1,12 @@
 """PostgreSQL ownership for protected work before send admission."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from hashlib import sha256
 from hmac import compare_digest
 from hmac import digest as hmac_digest
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,8 +28,8 @@ _CLAIM = """
     SELECT e.id FROM execution_commands c JOIN executions e ON e.id=c.execution_id
     WHERE c.state='READY' AND c.scheduled_at <= statement_timestamp()
       AND c.dispatch_not_after > statement_timestamp()
-    ORDER BY c.scheduled_at, e.id LIMIT 1 FOR UPDATE OF e SKIP LOCKED
 """
+_CLAIM_ORDER = " ORDER BY c.scheduled_at, e.id LIMIT 1 FOR UPDATE OF e SKIP LOCKED"
 _RECOVER = """
     SELECT e.id FROM execution_commands c JOIN executions e ON e.id=c.execution_id
     WHERE (c.state='CLAIMED' AND c.lease_expires_at <= statement_timestamp())
@@ -40,12 +41,37 @@ _RECOVER = """
 _LOCK_EXECUTION = "SELECT id FROM executions WHERE id=:id FOR UPDATE"
 
 
+SyntheticAdmission = Callable[[AsyncConnection], Awaitable[bytes]]
+_SYNTHETIC_MARKER_ACTION = "SYNTHETIC_SEND_MARKED"
+
+
+def _synthetic_marker_action(binding: bytes | None) -> str:
+    if binding is None:
+        return _SYNTHETIC_MARKER_ACTION
+    if len(binding) != 32:
+        raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+    return f"{_SYNTHETIC_MARKER_ACTION}:payments.issue_refund:refund-ledger.v2:{binding.hex()}"
+
+
+async def _admit_synthetic(
+    conn: AsyncConnection, admit: SyntheticAdmission | None
+) -> bytes | None:
+    if admit is None:
+        return None
+    binding = await admit(conn)
+    if not isinstance(binding, bytes) or len(binding) != 32:
+        raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+    return binding
+
+
 def synthetic_evidence_bytes(evidence: SyntheticOutcome) -> bytes:
+    content = evidence.model_dump(
+        mode="json", exclude={"attestation", "intent_binding"}
+    )
+    if evidence.intent_binding is None:
+        return canonical_json(["synthetic-outcome.v1", content])
     return canonical_json(
-        [
-            "synthetic-outcome.v1",
-            evidence.model_dump(mode="json", exclude={"attestation"}),
-        ]
+        ["synthetic-outcome.v2", content, evidence.intent_binding.hex()]
     )
 
 
@@ -129,9 +155,18 @@ class ExecutionWorkerStore:
         [clock] = await rows(conn, "SELECT clock_timestamp() AS current_time")
         return clock["current_time"]
 
-    async def claim(self, worker_id: UUID) -> ExecutionLease | None:
+    async def claim(
+        self, worker_id: UUID, *, tool_id: str | None = None
+    ) -> ExecutionLease | None:
         async with self._transaction() as (conn, _):
-            candidates = await rows(conn, _CLAIM)
+            if tool_id is None:
+                candidates = await rows(conn, _CLAIM + _CLAIM_ORDER)
+            else:
+                candidates = await rows(
+                    conn,
+                    _CLAIM + " AND c.tool_id=:tool_id" + _CLAIM_ORDER,
+                    tool_id=tool_id,
+                )
             if not candidates:
                 return None
             execution_id = candidates[0]["id"]
@@ -306,10 +341,11 @@ class ExecutionWorkerStore:
         )
 
     async def mark_synthetic_send(
-        self, owner: ExecutionOwner
+        self, owner: ExecutionOwner, *, admit: SyntheticAdmission | None = None
     ) -> SyntheticSendMarker | None:
         self._require_synthetic_sandbox()
         async with self._transaction() as (conn, revision):
+            binding = await _admit_synthetic(conn, admit)
             command = await self._lock_owned(conn, owner)
             if not command:
                 return None
@@ -318,6 +354,14 @@ class ExecutionWorkerStore:
                 "SELECT status FROM executions WHERE id=:id",
                 id=owner.execution_id,
             )
+            if binding is not None:
+                if not await rows(
+                    conn,
+                    "SELECT 1 FROM execution_commands WHERE execution_id=:id AND tool_id='payments.issue_refund'",
+                    id=owner.execution_id,
+                ):
+                    raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+                await self._lock_synthetic_audit_guards(conn)
             now = await self._clock(conn)
             if execution["status"] != "RUNNING" or now >= min(
                 command["lease_expires_at"], command["dispatch_not_after"]
@@ -342,7 +386,7 @@ class ExecutionWorkerStore:
                 "UPDATE execution_commands SET state='DISPATCHING' WHERE execution_id=:id",
                 id=owner.execution_id,
             )
-            await self._synthetic_audit(conn, owner, "SYNTHETIC_SEND_MARKED")
+            await self._synthetic_audit(conn, owner, _synthetic_marker_action(binding))
             return SyntheticSendMarker(
                 owner=owner, marked_at=now, admission_revision=revision
             )
@@ -366,11 +410,7 @@ class ExecutionWorkerStore:
         return (command, attempts[0]) if attempts else None
 
     @staticmethod
-    async def _synthetic_send_consumed(
-        conn: AsyncConnection, execution_id: UUID
-    ) -> bool:
-        # The execution row is locked by the caller. The schema permits one
-        # marked SEND per execution, so its consumption is execution-scoped.
+    async def _lock_synthetic_audit_guards(conn: AsyncConnection) -> None:
         # Keep the sandbox guards installed until this transaction commits.
         await execute(conn, "LOCK TABLE public.audit_events IN ROW EXCLUSIVE MODE")
         [guard] = await rows(
@@ -378,6 +418,7 @@ class ExecutionWorkerStore:
             """
             SELECT count(*) = 2 AS enabled FROM pg_catalog.pg_trigger
             WHERE tgrelid='public.audit_events'::regclass AND tgenabled='A'
+              AND tgfoid=pg_catalog.to_regprocedure('public.protect_synthetic_dispatch_evidence()')
               -- pg_trigger event bits: row/before/insert/update/delete and before/truncate.
               AND ((tgname='protect_synthetic_consumption_rows' AND tgtype=31)
                 OR (tgname='protect_synthetic_consumption_truncate' AND tgtype=34))
@@ -385,6 +426,31 @@ class ExecutionWorkerStore:
         )
         if not guard["enabled"]:
             raise CommandStoreError("SYNTHETIC_CONSUMPTION_PROTECTION_UNAVAILABLE")
+
+    @staticmethod
+    async def _verify_marker_contract(
+        conn: AsyncConnection, owner: ExecutionOwner, binding: bytes | None
+    ) -> None:
+        # The execution and its single marked attempt are already locked.
+        matching = await rows(
+            conn,
+            """
+            SELECT actor, action FROM audit_events WHERE resource_id=:id
+            AND (action=:marker OR starts_with(action, :prefix))
+            """,
+            id=owner.execution_id,
+            marker=_SYNTHETIC_MARKER_ACTION,
+            prefix=f"{_SYNTHETIC_MARKER_ACTION}:",
+        )
+        if matching != [
+            {"actor": str(owner.worker_id), "action": _synthetic_marker_action(binding)}
+        ]:
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+
+    @staticmethod
+    async def _synthetic_send_consumed(
+        conn: AsyncConnection, execution_id: UUID
+    ) -> bool:
         return bool(
             await rows(
                 conn,
@@ -396,10 +462,13 @@ class ExecutionWorkerStore:
             )
         )
 
-    async def consume_synthetic_send(self, marker: SyntheticSendMarker) -> bool:
+    async def consume_synthetic_send(
+        self, marker: SyntheticSendMarker, *, admit: SyntheticAdmission | None = None
+    ) -> bool:
         """Consume invocation permission. Only an acknowledged commit permits a send."""
         self._require_synthetic_sandbox()
         async with self._transaction() as (conn, _):
+            binding = await _admit_synthetic(conn, admit)
             locked = await self._lock_marked(conn, marker.owner)
             if not locked:
                 return False
@@ -409,6 +478,8 @@ class ExecutionWorkerStore:
                 "SELECT status FROM executions WHERE id=:id",
                 id=marker.owner.execution_id,
             )
+            await self._lock_synthetic_audit_guards(conn)
+            await self._verify_marker_contract(conn, marker.owner, binding)
             if await self._synthetic_send_consumed(conn, marker.owner.execution_id):
                 return False
             now = await self._clock(conn)
@@ -428,7 +499,10 @@ class ExecutionWorkerStore:
     def _synthetic_result(
         self, evidence: SyntheticOutcome
     ) -> tuple[ExecutionState, bytes]:
-        if evidence.operation_id != evidence.owner.execution_id:
+        if (
+            evidence.operation_id != evidence.owner.execution_id
+            or evidence.result not in ("EFFECT_COMMITTED", "DEFINITIVE_NO_EFFECT")
+        ):
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         target = (
             ExecutionState.SUCCEEDED
@@ -451,6 +525,10 @@ class ExecutionWorkerStore:
             if not locked:
                 return False
             command, _ = locked
+            await self._lock_synthetic_audit_guards(conn)
+            await self._verify_marker_contract(
+                conn, evidence.owner, evidence.intent_binding
+            )
             if not await self._synthetic_send_consumed(
                 conn, evidence.owner.execution_id
             ):
@@ -458,7 +536,16 @@ class ExecutionWorkerStore:
             now = await self._clock(conn)
             if now >= command["lease_expires_at"]:
                 return False
-            await self._finish_marked(conn, evidence.owner, target, now, digest)
+            await self._finish_marked(
+                conn,
+                evidence.owner,
+                target,
+                now,
+                digest,
+                evidence_source="LOOKUP"
+                if evidence.intent_binding is not None
+                else "RESPONSE",
+            )
             return True
 
     async def classify_synthetic_unknown(
@@ -484,6 +571,8 @@ class ExecutionWorkerStore:
         target: ExecutionState,
         now: datetime,
         digest: bytes | None,
+        *,
+        evidence_source: Literal["RESPONSE", "LOOKUP"] = "RESPONSE",
     ) -> None:
         await execute(
             conn,
@@ -501,11 +590,12 @@ class ExecutionWorkerStore:
                 """
                 INSERT INTO execution_receipts (execution_id, generation, outcome,
                     evidence_source, external_reference, evidence_digest, recorded_at)
-                VALUES (:id, :generation, :outcome, 'RESPONSE', :reference, :digest, :now)
+                VALUES (:id, :generation, :outcome, :evidence_source, :reference, :digest, :now)
                 """,
                 id=owner.execution_id,
                 generation=owner.generation,
                 outcome=target.value,
+                evidence_source=evidence_source,
                 reference=f"synthetic:{owner.execution_id}",
                 digest=digest,
                 now=now,
@@ -553,7 +643,8 @@ class ExecutionWorkerStore:
                     conn,
                     """
                     SELECT c.state, c.generation AS current_generation,
-                           a.send_marked_at, a.outcome, r.evidence_digest, r.outcome AS receipt_outcome
+                           a.send_marked_at, a.outcome, r.evidence_digest, r.outcome AS receipt_outcome,
+                           r.evidence_source
                     FROM execution_attempts a JOIN execution_commands c USING (execution_id)
                     LEFT JOIN execution_receipts r ON r.execution_id=a.execution_id
                         AND r.generation=a.generation
@@ -578,6 +669,15 @@ class ExecutionWorkerStore:
                 item["outcome"],
                 item["receipt_outcome"],
                 item["evidence_digest"],
+                item["evidence_source"],
             )
-            == (expected[0], expected[0], expected[0], expected[1]),
+            == (
+                expected[0],
+                expected[0],
+                expected[0],
+                expected[1],
+                "LOOKUP"
+                if evidence is not None and evidence.intent_binding is not None
+                else "RESPONSE",
+            ),
         }

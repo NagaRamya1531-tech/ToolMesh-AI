@@ -1243,7 +1243,7 @@ def test_synthetic_reserved_audit_insert_and_role_boundaries(upgraded):
                                         rol.rolsuper, rol.rolcreaterole, rol.rolreplication
                                     FROM pg_class c, pg_proc p, pg_roles rol
                                     WHERE c.oid='public.audit_events'::regclass
-                                      AND p.oid='public.protect_synthetic_consumption()'::regprocedure
+                                      AND p.oid='public.protect_synthetic_dispatch_evidence()'::regprocedure
                                       AND rol.rolname=current_user
                                     """,
                                 )
@@ -1258,22 +1258,29 @@ def test_synthetic_reserved_audit_insert_and_role_boundaries(upgraded):
                                         """,
                                         id=ident,
                                     )
-                            async with engine.connect() as conn:
-                                with pytest.raises(DBAPIError) as rejected:
-                                    await execute(
-                                        conn,
-                                        """
-                                        INSERT INTO audit_events(actor,action,resource_id)
-                                        VALUES ('sandbox','SYNTHETIC_INVOCATION_CONSUMED',:id)
-                                        """,
-                                        id=ident,
-                                    )
-                                assert rejected.value.orig.sqlstate == "42501"
-                                if engine is app:
-                                    assert (
-                                        "synthetic consumption action is reserved"
-                                        in str(rejected.value.orig)
-                                    )
+                            for action in (
+                                "SYNTHETIC_INVOCATION_CONSUMED",
+                                "SYNTHETIC_SEND_MARKED",
+                                "SYNTHETIC_SEND_MARKED:payments.issue_refund:refund-ledger.v2:"
+                                + "0" * 64,
+                            ):
+                                async with engine.connect() as conn:
+                                    with pytest.raises(DBAPIError) as rejected:
+                                        await execute(
+                                            conn,
+                                            """
+                                            INSERT INTO audit_events(actor,action,resource_id)
+                                            VALUES ('sandbox',:action,:id)
+                                            """,
+                                            id=ident,
+                                            action=action,
+                                        )
+                                    assert rejected.value.orig.sqlstate == "42501"
+                                    if engine is app:
+                                        assert (
+                                            "synthetic consumption action is reserved"
+                                            in str(rejected.value.orig)
+                                        )
                             async with engine.connect() as conn:
                                 with pytest.raises(DBAPIError) as rejected:
                                     await execute(

@@ -214,6 +214,82 @@ class ExecutionApprovals:
                 deadline=deadline,
             )
 
+    async def _lock_dispatch_approval(
+        self, conn: AsyncConnection, execution_id: UUID, tool_id: str
+    ) -> LockedApproval:
+        item = await self._lock(conn, execution_id)
+        if (
+            item.approval["status"] != ApprovalState.APPROVED
+            or item.command["tool_id"] != tool_id
+            or item.command["verification_only"]
+        ):
+            raise CommandStoreError("APPROVAL_NOT_AVAILABLE")
+        return item
+
+    async def read_sealed_dispatch_intent(
+        self, execution_id: UUID, tool_id: str
+    ) -> tuple[ProtectedIntentScope, dict, bytes]:
+        """Read an already-approved intent for evidence lookup only."""
+        async with self._transaction() as (conn, _):
+            item = await self._lock_dispatch_approval(conn, execution_id, tool_id)
+            scope, arguments = await self._verify_intent(conn, execution_id, item)
+            return scope, arguments, item.reservation["intent_digest"]
+
+    async def verify_dispatch_intent(
+        self, conn: AsyncConnection, execution_id: UUID, tool_id: str
+    ) -> tuple[ProtectedIntentScope, dict, bytes]:
+        """Verify an existing approval inside the caller's coordination transaction."""
+        item = await self._lock_dispatch_approval(conn, execution_id, tool_id)
+        approval = item.approval
+        actor = await resolve_principal(conn, approval["decided_by"])
+        if (
+            actor is None
+            or actor.kind != "human"
+            or actor.id == approval["requester"]
+            or actor.customer != approval["customer_id"]
+            or not await rows(
+                conn,
+                """
+                SELECT 1 FROM execution_approval_entitlements
+                WHERE principal=:actor AND customer_id=:customer AND tool_id=:tool AND enabled
+                """,
+                actor=actor.id,
+                customer=approval["customer_id"],
+                tool=tool_id,
+            )
+        ):
+            raise CommandStoreError("APPROVER_AUTHORIZATION_CHANGED")
+
+        decisions = await rows(
+            conn,
+            "SELECT * FROM execution_approval_decisions WHERE execution_id=:id",
+            id=execution_id,
+        )
+        if not decisions:
+            raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
+        try:
+            scope, arguments = await self._verify_intent(conn, execution_id, item)
+            reason = self._open(
+                decisions[0], PayloadContext("approval-decision", execution_id, scope)
+            )
+        except PayloadUnavailable:
+            raise CommandStoreError("EXECUTION_PAYLOAD_UNAVAILABLE") from None
+        expected = self._digests.intent(
+            canonical_json(
+                [
+                    "approval-decision.v1",
+                    str(execution_id),
+                    actor.id,
+                    "APPROVED",
+                    json.loads(reason),
+                ]
+            )
+        )
+        if not compare_digest(decisions[0]["reason_digest"], expected):
+            raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
+        await self._authorize_requester(conn, item, scope, arguments)
+        return scope, arguments, item.reservation["intent_digest"]
+
     async def expire(self, execution_id: UUID) -> ApprovalResult:
         """Close an expired pending approval without needing to decrypt arguments."""
         async with self._transaction() as (conn, _):
