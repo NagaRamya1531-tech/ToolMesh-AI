@@ -66,6 +66,7 @@ async def worker_login(db):
             await execute(conn, "DROP SCHEMA m914_ownership CASCADE")
             for role in (
                 LOGIN,
+                "m914_refund_operator",
                 "m914_refund_verifier",
                 "m914_refund_function_owner",
                 "m914_worker_access",
@@ -366,7 +367,7 @@ def test_verifier_denies_direct_writes_and_rejects_excess_grants(upgraded, monke
                 ) is not None
                 operation = """
                     SELECT * FROM m914_refund.operate('finish',:id,:worker,:gen,
-                        NULL,:preimage,:verdict,NULL,NULL)
+                        NULL,:preimage,:verdict,NULL)
                 """
                 owner = claim.lease.owner
                 params = {

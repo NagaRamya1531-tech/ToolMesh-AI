@@ -17,6 +17,7 @@ from gateway.execution_contracts import (
     ExecutionOwner,
     ExecutionState,
     PreSendTransition,
+    RefundDeferralReason,
     RefundVerification,
     SyntheticEvidenceContract,
     SyntheticOutcome,
@@ -704,6 +705,11 @@ class ExecutionWorkerStore:
     async def _lock_refund_unknown(
         conn: AsyncConnection, execution_id: UUID
     ) -> dict | None:
+        [interface] = await rows(
+            conn, "SELECT to_regclass('m914_refund.windows') IS NOT NULL AS installed"
+        )
+        if interface["installed"]:
+            raise CommandStoreError("REFUND_VERIFICATION_RESTRICTED_INTERFACE_REQUIRED")
         if not await rows(conn, _LOCK_EXECUTION, id=execution_id):
             return None
         commands = await rows(
@@ -800,9 +806,7 @@ class ExecutionWorkerStore:
         evidence: SyntheticOutcome | None = None,
         binding_preimage: bytes | None = None,
         defer_for: timedelta = timedelta(seconds=5),
-        deferral_reason: Literal[
-            "NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"
-        ] = "NO_EVIDENCE",
+        deferral_reason: RefundDeferralReason = "NO_EVIDENCE",
     ) -> ExecutionState | None:
         self._require_synthetic_sandbox()
         if defer_for <= timedelta(0):

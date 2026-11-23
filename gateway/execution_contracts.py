@@ -8,6 +8,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 
 ProtectedTool = Literal["payments.issue_refund", "it.restart_service"]
 SyntheticEvidenceContract = Literal["it-restart-ledger.v1"]
+RefundDeferralReason = Literal["NO_EVIDENCE", "UNAVAILABLE", "MISMATCH", "TIMEOUT"]
 NonEmpty = Annotated[str, Field(min_length=1)]
 PositiveInt = Annotated[int, Field(ge=1)]
 Generation = Annotated[int, Field(ge=0)]
@@ -117,6 +118,7 @@ class RefundVerification(Record):
     lease: ExecutionLease
     sender: ExecutionOwner
     intent_binding: Digest = Field(repr=False)
+    lookup_timeout_ms: Annotated[int, Field(ge=1, le=30000)] = 3000
 
     @model_validator(mode="after")
     def validate_generations(self) -> Self:

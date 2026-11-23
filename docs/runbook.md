@@ -60,11 +60,21 @@ Run the focused suite with a ToolMesh PostgreSQL image built from `infra/postgre
 docker build -f infra/postgres.Dockerfile -t toolmesh-postgres-step6-test .
 TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_synthetic_refund_reconciliation_postgres.py
 TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_sandbox_refund_worker_postgres.py
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_sandbox_refund_policy_postgres.py
 ```
 
 For each execution, inspect the original marked `SEND`, later `VERIFY` generations, and the receipt linked to the terminal verifier. An unresolved check leaves `next_check_at` on the `UNKNOWN` command. The standalone worker discovers due timestamps and expired verification leases, including while renewing a SEND lease. The fixture parks expired marked sends first.
 
 The worker tests provision the restricted ownership functions, synthetic refund ledger, and audit guards, then install the [disposable verifier functions and grants](../tests/fixtures/m914_refund_verifier_privileges.sql). The dedicated worker login belongs only to `m914_worker_access` and `m914_refund_verifier`. Its direct data access covers the Alembic version and synthetic outcome reads. Startup exits with status 2 if the effective grants or required functions fail validation. The fixture enables durable coordination only in its own database. To enable verification in the process, set the secret `TOOLMESH_SANDBOX_WORKER_REFUND_VERIFICATION_KEYS` to four colon-separated 32-byte hex keys in wrapping, request lookup, intent digest, and evidence order. Use the same ephemeral fixture keys that wrote the sealed command and sign refund evidence. With this setting absent, the worker runs its ownership exercise.
+
+The disposable provisioner can update the singleton `m914_refund.retry_policy` before opening a window. Defaults are six attempts, five minutes elapsed, backoff from one to thirty seconds, zero jitter, and a three-second lookup timeout. Use milliseconds for `elapsed_ms`, `initial_ms`, `max_delay_ms`, and `lookup_ms`. Set `jitter_percent` between 0 and 50 to reduce delays deterministically within the configured cap. Policy changes apply to new windows. Provision the current fixture on a disposable revision 0011 database to use this worker version. With the fixture installed, both polling and execution-ID verification use the restricted interface and the same policy.
+
+Use a separate login granted `m914_refund_operator` to inspect or resume an exhausted command. Supply the reported window number and a non-sensitive reason. A concurrent or repeated resume for the same window returns no row after the first succeeds.
+
+```sql
+SELECT * FROM m914_refund.attention('<execution-id>'::uuid);
+SELECT * FROM m914_refund.resume('<execution-id>'::uuid, 1, 'Synthetic ledger access restored');
+```
 
 ## Reproduce an evaluation
 

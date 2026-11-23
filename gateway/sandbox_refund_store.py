@@ -3,7 +3,6 @@
 from datetime import timedelta
 from hashlib import sha256
 from hmac import compare_digest, digest
-from typing import Literal
 from uuid import UUID
 
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
@@ -15,6 +14,7 @@ from gateway.execution_contracts import (
     ExecutionOwner,
     ExecutionState,
     ProtectedIntentScope,
+    RefundDeferralReason,
     RefundVerification,
     SyntheticOutcome,
 )
@@ -25,7 +25,7 @@ from shared.database import execute, rows
 
 _OPERATE = """
     SELECT * FROM m914_refund.operate(
-        :action,:id,:worker,:generation,:lease_ms,:preimage,:verdict,:delay_ms,:reason
+        :action,:id,:worker,:generation,:lease_ms,:preimage,:verdict,:reason
     )
 """
 _SQL_ERRORS = {
@@ -36,6 +36,7 @@ _SQL_ERRORS = {
     "M9145": "WORKER_ISOLATION_UNSUPPORTED",
     "M9146": "SYNTHETIC_CONSUMPTION_PROTECTION_UNAVAILABLE",
     "M9147": "SYNTHETIC_EVIDENCE_MISMATCH",
+    "M9148": "SYNTHETIC_OPERATOR_AUDIT_PROTECTION_UNAVAILABLE",
     "42501": "WORKER_ACCESS_DENIED",
     "22023": "WORKER_CONFIGURATION_REJECTED",
 }
@@ -88,7 +89,7 @@ class SandboxRefundStore:
                     ('m914_ownership.register_worker()'),
                     ('m914_ownership.operate(text,uuid,uuid,bigint,integer)'),
                     ('m914_refund.discover(integer)'),
-                    ('m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,bigint,text)'),
+                    ('m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text)'),
                     ('m914_refund.intent(uuid,uuid,bigint)'),
                     ('m914_refund.receipt(uuid,uuid,bigint)')
                 )
@@ -182,7 +183,6 @@ class SandboxRefundStore:
             lease_ms=self._lease_ms,
             preimage=None,
             verdict=None,
-            delay_ms=None,
             reason=None,
         )
         if not records:
@@ -203,6 +203,7 @@ class SandboxRefundStore:
                 generation=row["sender_generation"],
             ),
             intent_binding=row["intent_binding"],
+            lookup_timeout_ms=row["lookup_timeout_ms"],
         )
 
     async def read_intent(
@@ -270,10 +271,7 @@ class SandboxRefundStore:
         *,
         evidence: SyntheticOutcome | None = None,
         binding_preimage: bytes | None = None,
-        defer_for: timedelta = timedelta(seconds=5),
-        deferral_reason: Literal[
-            "NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"
-        ] = "NO_EVIDENCE",
+        deferral_reason: RefundDeferralReason = "NO_EVIDENCE",
     ) -> ExecutionState | None:
         if evidence is not None:
             self._evidence_digest(claim, evidence)
@@ -287,7 +285,6 @@ class SandboxRefundStore:
             lease_ms=None,
             preimage=binding_preimage,
             verdict=evidence.result if evidence is not None else None,
-            delay_ms=int(defer_for / timedelta(milliseconds=1)),
             reason=deferral_reason,
         )
         return ExecutionState(records[0]["state"]) if records else None

@@ -1,5 +1,12 @@
 # Changelog
 
+## M9.1.4 Step 6 · Bounded synthetic refund verification
+
+- Added database-backed verification windows with an attempt limit, an elapsed deadline, capped exponential backoff, optional deterministic jitter, and a lookup timeout. A committed claim spends an attempt even if the verifier crashes.
+- Exhaustion preserves `UNKNOWN` and stops discovery. A separate PostgreSQL operator role can open one new verification window with an expected window number and an audited reason. Prior attempts and the original SEND binding remain available.
+- Reserved synthetic refund attention and resume audit actions for the effective refund function owner. The disposable guard rejects forged inserts, prevents mutation of protected events, and is required before verification writes.
+- Passed 64 focused PostgreSQL cases on fresh and upgraded databases, including 22 retry-policy, operator, and audit-guard cases. Another 414 regression cases passed and two Compose-dependent cases were skipped. Ruff lint and formatting, mypy, and Git whitespace checks passed.
+
 ## M9.1.4 Step 6 · Sandbox refund verification discovery
 
 - Added opt-in, database-time discovery of due refund checks and expired verification leases. The standalone sandbox worker checks SEND first, then polls for one verification candidate at a time on a separate connection checkout, including while it renews a SEND lease.

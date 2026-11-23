@@ -4,14 +4,18 @@ from asyncio import timeout
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager, nullcontext
 from datetime import timedelta
-from typing import Literal
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.execution_approval import ExecutionApprovals
-from gateway.execution_contracts import ExecutionState, SyntheticOutcome
+from gateway.execution_contracts import (
+    ExecutionState,
+    RefundDeferralReason,
+    RefundVerification,
+    SyntheticOutcome,
+)
 from gateway.execution_store import CommandStoreError
 from gateway.execution_worker_store import ExecutionWorkerStore
 from gateway.sandbox_refund_evidence import RefundIntent, RefundRequest
@@ -36,6 +40,29 @@ class RefundReconciler:
         self._lookup = lookup
         self._defer_for = defer_for
 
+    async def _finish(
+        self,
+        claim: RefundVerification,
+        *,
+        reason: RefundDeferralReason,
+        evidence: SyntheticOutcome | None = None,
+        preimage: bytes | None = None,
+    ) -> ExecutionState | None:
+        if isinstance(self._store, SandboxRefundStore):
+            return await self._store.finish_synthetic_refund_verification(
+                claim,
+                evidence=evidence,
+                binding_preimage=preimage,
+                deferral_reason=reason,
+            )
+        return await self._store.finish_synthetic_refund_verification(
+            claim,
+            evidence=evidence,
+            binding_preimage=preimage,
+            defer_for=self._defer_for,
+            deferral_reason=reason,
+        )
+
     async def run_once(
         self,
         execution_id: UUID,
@@ -56,9 +83,9 @@ class RefundReconciler:
             return None
         evidence = None
         preimage = None
-        reason: Literal["NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"] = "NO_EVIDENCE"
+        reason: RefundDeferralReason = "NO_EVIDENCE"
         try:
-            async with timeout(3):
+            async with timeout(claim.lookup_timeout_ms / 1000):
                 if isinstance(self._store, SandboxRefundStore):
                     scope, args, sealed_digest = await self._store.read_intent(claim)
                 else:
@@ -80,7 +107,9 @@ class RefundReconciler:
                 evidence = await self._lookup(intent)
                 if evidence is not None:
                     preimage = intent.binding_preimage()
-        except (SQLAlchemyError, OSError, TimeoutError):
+        except TimeoutError:
+            reason = "TIMEOUT"
+        except (SQLAlchemyError, OSError):
             reason = "UNAVAILABLE"
         except ValidationError:
             reason = "MISMATCH"
@@ -102,20 +131,14 @@ class RefundReconciler:
             return None
         with mutation("verify_finish"):
             try:
-                return await self._store.finish_synthetic_refund_verification(
-                    claim,
-                    evidence=evidence,
-                    binding_preimage=preimage,
-                    defer_for=self._defer_for,
-                    deferral_reason=reason,
+                return await self._finish(
+                    claim, evidence=evidence, preimage=preimage, reason=reason
                 )
             except CommandStoreError as error:
                 if str(error) == "SYNTHETIC_EVIDENCE_MISMATCH":
                     if stopping():
                         return None
-                    return await self._store.finish_synthetic_refund_verification(
-                        claim, defer_for=self._defer_for, deferral_reason="MISMATCH"
-                    )
+                    return await self._finish(claim, reason="MISMATCH")
                 if (
                     str(error) == "EXECUTION_OWNERSHIP_UNAVAILABLE"
                     and evidence is not None
