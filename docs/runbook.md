@@ -59,9 +59,12 @@ Run the focused suite with a ToolMesh PostgreSQL image built from `infra/postgre
 ```sh
 docker build -f infra/postgres.Dockerfile -t toolmesh-postgres-step6-test .
 TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_synthetic_refund_reconciliation_postgres.py
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_sandbox_refund_worker_postgres.py
 ```
 
-For each execution, inspect the original marked `SEND`, later `VERIFY` generations, and the receipt linked to the terminal verifier. An unresolved check leaves `next_check_at` on the `UNKNOWN` command. The sandbox entry point takes an execution ID. The test fixtures enable durable coordination inside their own databases.
+For each execution, inspect the original marked `SEND`, later `VERIFY` generations, and the receipt linked to the terminal verifier. An unresolved check leaves `next_check_at` on the `UNKNOWN` command. The standalone worker discovers due timestamps and expired verification leases, including while renewing a SEND lease. The fixture parks expired marked sends first.
+
+The worker tests provision the restricted ownership functions, synthetic refund ledger, and audit guards, then install the [disposable verifier functions and grants](../tests/fixtures/m914_refund_verifier_privileges.sql). The dedicated worker login belongs only to `m914_worker_access` and `m914_refund_verifier`. Its direct data access covers the Alembic version and synthetic outcome reads. Startup exits with status 2 if the effective grants or required functions fail validation. The fixture enables durable coordination only in its own database. To enable verification in the process, set the secret `TOOLMESH_SANDBOX_WORKER_REFUND_VERIFICATION_KEYS` to four colon-separated 32-byte hex keys in wrapping, request lookup, intent digest, and evidence order. Use the same ephemeral fixture keys that wrote the sealed command and sign refund evidence. With this setting absent, the worker runs its ownership exercise.
 
 ## Reproduce an evaluation
 

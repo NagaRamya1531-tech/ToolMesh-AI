@@ -1,51 +1,16 @@
 """Refund-specific downstream simulator for disposable PostgreSQL."""
 
-from dataclasses import dataclass
-from hashlib import sha256
-from hmac import compare_digest, digest
-
-from pydantic import BaseModel, ConfigDict, PositiveInt
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from gateway.execution_contracts import (
-    ExecutionOwner,
-    ProtectedIntentScope,
-    SyntheticOutcome,
+from gateway.execution_contracts import SyntheticOutcome
+from gateway.sandbox_refund_evidence import (
+    RefundIntent as RefundIntent,
 )
-from gateway.execution_crypto import canonical_json
-from gateway.execution_worker_store import synthetic_evidence_bytes
+from gateway.sandbox_refund_evidence import (
+    RefundRequest as RefundRequest,
+)
+from gateway.sandbox_refund_evidence import read_refund_evidence
 from shared.database import execute, rows
-
-
-class RefundRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    customer_id: str
-    transaction_id: str
-    currency: str
-    amount_minor: PositiveInt
-
-
-@dataclass(frozen=True)
-class RefundIntent:
-    owner: ExecutionOwner
-    scope: ProtectedIntentScope
-    request: RefundRequest
-    sealed_digest: bytes
-
-    @property
-    def binding(self) -> bytes:
-        return sha256(
-            canonical_json(
-                [
-                    "synthetic-refund.v1",
-                    self.owner.model_dump(mode="json"),
-                    self.scope.model_dump(mode="json"),
-                    self.request.model_dump(mode="json"),
-                    self.sealed_digest.hex(),
-                ]
-            )
-        ).digest()
 
 
 class RefundLedger:
@@ -131,33 +96,4 @@ class RefundLedger:
                     )
 
     async def evidence(self, intent: RefundIntent) -> SyntheticOutcome | None:
-        operation_id = intent.owner.execution_id
-        async with self._db.connect() as conn:
-            observed = await rows(
-                conn,
-                "SELECT binding, refunded_minor FROM synthetic_refund.outcomes WHERE operation_id=:id",
-                id=operation_id,
-            )
-        if not observed:
-            return None
-        evidence = observed[0]
-        if not compare_digest(evidence["binding"], intent.binding) or evidence[
-            "refunded_minor"
-        ] not in (0, intent.request.amount_minor):
-            return None
-        outcome = SyntheticOutcome(
-            owner=intent.owner,
-            operation_id=operation_id,
-            result="EFFECT_COMMITTED"
-            if evidence["refunded_minor"]
-            else "DEFINITIVE_NO_EFFECT",
-            intent_binding=intent.binding,
-            attestation=bytes(32),
-        )
-        return outcome.model_copy(
-            update={
-                "attestation": digest(
-                    self._key, synthetic_evidence_bytes(outcome), "sha256"
-                )
-            }
-        )
+        return await read_refund_evidence(self._db, self._key, intent)

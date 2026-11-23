@@ -1,0 +1,130 @@
+"""Evidence-only refund reconciler for disposable PostgreSQL."""
+
+from asyncio import timeout
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager, nullcontext
+from datetime import timedelta
+from typing import Literal
+from uuid import UUID
+
+from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
+
+from gateway.execution_approval import ExecutionApprovals
+from gateway.execution_contracts import ExecutionState, SyntheticOutcome
+from gateway.execution_store import CommandStoreError
+from gateway.execution_worker_store import ExecutionWorkerStore
+from gateway.sandbox_refund_evidence import RefundIntent, RefundRequest
+from gateway.sandbox_refund_store import SandboxRefundStore
+
+TOOL = "payments.issue_refund"
+
+
+class RefundReconciler:
+    def __init__(
+        self,
+        approvals: ExecutionApprovals,
+        store: ExecutionWorkerStore | SandboxRefundStore,
+        lookup: Callable[[RefundIntent], Awaitable[SyntheticOutcome | None]],
+        *,
+        defer_for: timedelta = timedelta(seconds=5),
+    ):
+        if defer_for <= timedelta(0):
+            raise ValueError("verification deferral must be positive")
+        self._approvals = approvals
+        self._store = store
+        self._lookup = lookup
+        self._defer_for = defer_for
+
+    async def run_once(
+        self,
+        execution_id: UUID,
+        verifier: UUID,
+        *,
+        stopping: Callable[[], bool] = lambda: False,
+        mutation: Callable[[str], AbstractContextManager[None]] = lambda _: (
+            nullcontext()
+        ),
+    ) -> ExecutionState | None:
+        if stopping():
+            return None
+        with mutation("verify_claim"):
+            claim = await self._store.claim_synthetic_refund_verification(
+                execution_id, verifier
+            )
+        if claim is None or stopping():
+            return None
+        evidence = None
+        preimage = None
+        reason: Literal["NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"] = "NO_EVIDENCE"
+        try:
+            async with timeout(3):
+                if isinstance(self._store, SandboxRefundStore):
+                    scope, args, sealed_digest = await self._store.read_intent(claim)
+                else:
+                    (
+                        scope,
+                        args,
+                        sealed_digest,
+                    ) = await self._approvals.read_sealed_dispatch_intent(
+                        execution_id, TOOL
+                    )
+                intent = RefundIntent(
+                    claim.sender,
+                    scope,
+                    RefundRequest.model_validate(args),
+                    sealed_digest,
+                )
+                if intent.binding != claim.intent_binding:
+                    raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
+                evidence = await self._lookup(intent)
+                if evidence is not None:
+                    preimage = intent.binding_preimage()
+        except (SQLAlchemyError, OSError, TimeoutError):
+            reason = "UNAVAILABLE"
+        except ValidationError:
+            reason = "MISMATCH"
+        except CommandStoreError as error:
+            if str(error) in {
+                "EXECUTION_PAYLOAD_UNAVAILABLE",
+                "APPROVAL_STORE_UNAVAILABLE",
+            }:
+                reason = "UNAVAILABLE"
+            elif str(error) in {
+                "APPROVAL_NOT_AVAILABLE",
+                "EXECUTION_INTENT_MISMATCH",
+                "SYNTHETIC_EVIDENCE_MISMATCH",
+            }:
+                reason = "MISMATCH"
+            else:
+                raise
+        if stopping():
+            return None
+        with mutation("verify_finish"):
+            try:
+                return await self._store.finish_synthetic_refund_verification(
+                    claim,
+                    evidence=evidence,
+                    binding_preimage=preimage,
+                    defer_for=self._defer_for,
+                    deferral_reason=reason,
+                )
+            except CommandStoreError as error:
+                if str(error) == "SYNTHETIC_EVIDENCE_MISMATCH":
+                    if stopping():
+                        return None
+                    return await self._store.finish_synthetic_refund_verification(
+                        claim, defer_for=self._defer_for, deferral_reason="MISMATCH"
+                    )
+                if (
+                    str(error) == "EXECUTION_OWNERSHIP_UNAVAILABLE"
+                    and evidence is not None
+                ):
+                    committed = (
+                        await self._store.read_completed_synthetic_refund_verification(
+                            claim, evidence
+                        )
+                    )
+                    if committed is not None:
+                        return committed
+                raise

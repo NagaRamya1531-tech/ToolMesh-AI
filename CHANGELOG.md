@@ -1,5 +1,12 @@
 # Changelog
 
+## M9.1.4 Step 6 · Sandbox refund verification discovery
+
+- Added opt-in, database-time discovery of due refund checks and expired verification leases. The standalone sandbox worker checks SEND first, then polls for one verification candidate at a time on a separate connection checkout, including while it renews a SEND lease.
+- Restricted worker access to refund-scoped PostgreSQL functions and a SELECT-only synthetic outcome ledger. The functions fence verification mutations, check committed ledger evidence against the original SEND binding, and compute the canonical receipt digest. Startup rejects extra database privileges.
+- Shutdown leaves interrupted verification leases available for expiry and reclamation. An unconfirmed verification mutation uses the existing ownership-unconfirmed exit code.
+- Passed 42 focused PostgreSQL cases on fresh and upgraded databases and 414 regression cases. Two Compose-dependent workflow cases were skipped. Ruff lint and formatting, mypy, and Git whitespace checks passed.
+
 ## M9.1.4 Step 6 · Synthetic refund reconciliation review
 
 - Added a callable-by-ID verification path for the disposable refund sandbox. An expired marked send can be parked as `UNKNOWN`. Later verification generations read the bound ledger evidence and either record one fenced terminal receipt or schedule another check.

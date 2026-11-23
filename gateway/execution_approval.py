@@ -349,6 +349,21 @@ class ExecutionApprovals:
     async def _verify_intent(
         self, conn: AsyncConnection, execution_id: UUID, item: LockedApproval
     ) -> tuple[ProtectedIntentScope, dict]:
+        c = item.command
+        contract = await rows(
+            conn,
+            "SELECT contract FROM tool_versions WHERE tool_id=:tool AND version=:version",
+            tool=c["tool_id"],
+            version=c["tool_version"],
+        )
+        return self.verify_sealed_intent(
+            execution_id, item, contract[0]["contract"] if contract else None
+        )
+
+    def verify_sealed_intent(
+        self, execution_id: UUID, item: LockedApproval, contract: dict | None
+    ) -> tuple[ProtectedIntentScope, dict]:
+        """Authenticate a sealed snapshot from a scoped database reader."""
         c, k, a, e = item.command, item.reservation, item.approval, item.execution
         scope = ProtectedIntentScope(
             workspace_id=c["workspace_id"],
@@ -380,17 +395,11 @@ class ExecutionApprovals:
             )
         ):
             raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
-        contract = await rows(
-            conn,
-            "SELECT contract FROM tool_versions WHERE tool_id=:tool AND version=:version",
-            tool=scope.tool_id,
-            version=version,
-        )
         if (
             not contract
-            or contract[0]["contract"].get("risk") != "approval"
+            or contract.get("risk") != "approval"
             or not compare_digest(
-                sha256(canonical_json(contract[0]["contract"])).digest(),
+                sha256(canonical_json(contract)).digest(),
                 c["contract_digest"],
             )
         ):
@@ -405,7 +414,7 @@ class ExecutionApprovals:
                 or arguments.get("customer_id") != scope.customer_id
             ):
                 raise ValueError
-            canonical = canonical_arguments(contract[0]["contract"], arguments)
+            canonical = canonical_arguments(contract, arguments)
         except (ValueError, CommandStoreError):
             raise CommandStoreError("EXECUTION_INTENT_MISMATCH") from None
         if not compare_digest(

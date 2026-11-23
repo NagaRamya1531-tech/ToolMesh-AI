@@ -503,7 +503,7 @@ ToolMesh-AI/
 | M9.1.4 Steps 1–3 | PostgreSQL ownership, synthetic send markers, and fenced finalization | Isolated sandbox implementation. Synthetic adapters remain test-only. |
 | M9.1.4 Step 4 | Standalone PostgreSQL ownership worker | Isolated sandbox only. Claims, lease renewal, fenced release, and pre-send recovery. |
 | M9.1.4 Step 5 | Synthetic adapter integration | Refund and IT restart implemented for isolated sandbox review. |
-| M9.1.4 Step 6 | Fenced reconciliation for synthetic refunds | In progress. Execution-ID entry point available in the disposable sandbox for focused acceptance. |
+| M9.1.4 Step 6 | Fenced reconciliation for synthetic refunds | In progress. The disposable worker can discover due refunds when verification is enabled. Slice 2 acceptance pending. |
 | Future | Autonomous multi-step model workflows, production identity, tenant isolation, high availability | Planned |
 
 [Changelog](CHANGELOG.md) · [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0)

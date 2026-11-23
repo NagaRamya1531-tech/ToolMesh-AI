@@ -798,6 +798,7 @@ class ExecutionWorkerStore:
         claim: RefundVerification,
         *,
         evidence: SyntheticOutcome | None = None,
+        binding_preimage: bytes | None = None,
         defer_for: timedelta = timedelta(seconds=5),
         deferral_reason: Literal[
             "NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"
@@ -806,6 +807,11 @@ class ExecutionWorkerStore:
         self._require_synthetic_sandbox()
         if defer_for <= timedelta(0):
             raise ValueError("verification deferral must be positive")
+        if (
+            binding_preimage is not None
+            and sha256(binding_preimage).digest() != claim.intent_binding
+        ):
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         owner = claim.lease.owner
         async with self._transaction() as (conn, _):
             command = await self._lock_refund_unknown(conn, owner.execution_id)

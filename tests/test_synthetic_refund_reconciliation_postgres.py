@@ -8,7 +8,6 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncTransaction
-from synthetic_refund_reconciliation import RefundReconciler
 from test_durable_execution_schema import IMAGE
 from test_durable_execution_schema import sandbox as sandbox
 from test_execution_worker_postgres import expire_synthetic_lease, snapshot
@@ -18,6 +17,7 @@ from test_synthetic_refund_postgres import upgraded as upgraded
 from gateway.execution_contracts import ExecutionState
 from gateway.execution_store import CommandStoreError
 from gateway.execution_worker_store import synthetic_evidence_bytes
+from gateway.sandbox_refund_reconciliation import RefundReconciler
 from shared.database import execute
 
 pytestmark = pytest.mark.skipif(
