@@ -101,6 +101,36 @@ class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class ExecutionOwner(Record):
+    execution_id: UUID
+    worker_id: UUID
+    generation: Annotated[int, Field(strict=True, ge=1, le=2**63 - 1)]
+
+
+class ExecutionLease(Record):
+    owner: ExecutionOwner
+    expires_at: AwareDatetime
+
+
+class SyntheticSendMarker(Record):
+    owner: ExecutionOwner
+    marked_at: AwareDatetime
+    admission_revision: PositiveInt
+
+
+class SyntheticOutcome(Record):
+    owner: ExecutionOwner
+    operation_id: UUID
+    result: Literal["EFFECT_COMMITTED", "DEFINITIVE_NO_EFFECT"]
+    attestation: Digest = Field(repr=False)
+
+
+class PreSendTransition(Record):
+    execution_id: UUID
+    generation: Generation
+    state: Literal[ExecutionState.READY, ExecutionState.FAILED]
+
+
 class SealedPayload(Record):
     """Opaque storage envelope. Authenticity is checked by the future crypto layer."""
 

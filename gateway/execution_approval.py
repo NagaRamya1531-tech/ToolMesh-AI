@@ -442,15 +442,19 @@ class ExecutionApprovals:
         status = ApprovalState(item.approval["status"])
         state = ExecutionState(item.command["state"])
         expected = {
-            ApprovalState.PENDING: ExecutionState.PENDING_APPROVAL,
-            ApprovalState.APPROVED: ExecutionState.READY,
-            ApprovalState.EXPIRED: ExecutionState.EXPIRED,
-            ApprovalState.REJECTED: ExecutionState.REJECTED,
+            ApprovalState.PENDING: {ExecutionState.PENDING_APPROVAL},
+            ApprovalState.APPROVED: {ExecutionState.READY, ExecutionState.CLAIMED},
+            ApprovalState.EXPIRED: {ExecutionState.EXPIRED},
+            ApprovalState.REJECTED: {ExecutionState.REJECTED},
         }
+        deadline_failure = (
+            status is ApprovalState.APPROVED
+            and state is ExecutionState.FAILED
+            and item.execution["error_code"] == "DISPATCH_DEADLINE_EXCEEDED"
+        )
         if (
-            state is not expected[status]
-            or state.public_status != item.execution["status"]
-        ):
+            state not in expected[status] and not deadline_failure
+        ) or state.public_status != item.execution["status"]:
             raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
         return ApprovalResult(
             execution_id, status, state, item.command["dispatch_not_after"], replayed

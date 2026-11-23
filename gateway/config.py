@@ -32,3 +32,17 @@ class Settings(BaseSettings):
     hr_password: SecretStr | None = None
     hr_secret: SecretStr | None = None
     analytics_secret: SecretStr | None = None
+
+
+class SandboxWorkerSettings(BaseSettings):
+    """Independent configuration for the disposable ownership exercise."""
+
+    model_config = SettingsConfigDict(env_prefix="TOOLMESH_SANDBOX_WORKER_")
+
+    enabled: bool = False
+    database_url: SecretStr
+    lease_seconds: float = Field(default=20, ge=0.1, le=300)
+    renew_seconds: float = Field(default=5, gt=0, le=60)
+    poll_seconds: float = Field(default=0.25, gt=0, le=5)
+    max_poll_seconds: float = Field(default=2, gt=0, le=30)
+    drain_seconds: float = Field(default=4, gt=0, le=30)

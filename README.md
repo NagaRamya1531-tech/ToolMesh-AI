@@ -500,6 +500,8 @@ ToolMesh-AI/
 | M9.1.1 | Slice A contracts and additive PostgreSQL schema for protected execution | Schema implemented. Durable dispatch remains disabled. |
 | M9.1.2 | Protected command store, scoped idempotency, and authenticated payload envelopes | Store verified in isolated tests. Gateway integration awaits a later milestone. |
 | M9.1.3 | Atomic protected decisions and authorization revision coordination | Internal approval service. Durable dispatch remains disabled. |
+| M9.1.4 Steps 1–3 | PostgreSQL ownership, synthetic send markers, and fenced finalization | Isolated sandbox implementation. Synthetic adapters remain test-only. |
+| M9.1.4 Step 4 | Standalone PostgreSQL ownership worker | Isolated sandbox only. Claims, lease renewal, fenced release, and pre-send recovery. |
 | Future | Autonomous multi-step model workflows, production identity, tenant isolation, high availability | Planned |
 
 [Changelog](CHANGELOG.md) · [Sandbox release v0.1.0](https://github.com/NagaRamya1531-tech/ToolMesh-AI/tree/v0.1.0)

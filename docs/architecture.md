@@ -298,6 +298,18 @@ An approval moves the command to READY and projects RUNNING for execution status
 
 Revision 0011 adds statement-level guards for account, policy, refund grant, entitlement, and catalog mutations. Catalog and crawler callers take the guard before their row locks. Existing legacy paths skip command-backed approvals. The protected service has no public route or dispatcher, and the deployed gate remains disabled. A future worker must recheck current authorization and the deadline before sending. Legacy cutover still requires quiescing old binaries. [Decision service](../gateway/execution_approval.py) · [Migration](../db/migrations/versions/0011_atomic_execution_approval.py)
 
+### Synthetic send markers and finalization
+
+The ownership store exposes explicitly enabled sandbox operations. A marker moves CLAIMED to DISPATCHING and retains the RUNNING public status. A valid finalizer commits attempt outcome, synthetic receipt, command, execution status, and audit evidence together. An unresolved marked attempt becomes UNKNOWN without a receipt or replacement send. The test adapter attests typed outcomes with an ephemeral fixture key and commits its operation ledger separately from the execution transaction.
+
+After an ambiguous commit, the harness reads the primary by execution, worker, and generation. A marker discovered by reread grants no permission to invoke. Matching terminal evidence confirms finalization without another effect. Ownership expires at or before the dispatch deadline in this slice, so an outcome arriving after lease expiry cannot be finalized by that owner. The synthetic methods are disconnected from gateway routes and worker startup. Disposable fixtures install PostgreSQL guards that reserve consumption inserts for the audit-table owner and reject updates, deletes, and truncation of consumption evidence. The fixture owner and roles with equivalent DDL authority are trusted. The synthetic store refuses invocation authorization when those guards are unavailable. [Ownership store](../gateway/execution_worker_store.py) · [PostgreSQL tests](../tests/test_execution_worker_postgres.py)
+
+### Standalone ownership sandbox
+
+`python -m gateway.execution_worker` is an explicit sandbox entry point for pre-send ownership. The dedicated login reads Alembic metadata and executes the fixture's allowlisted ownership operations. A non-login function owner holds the table privileges required by the fixed SQL. The worker has no direct table writes. Startup accepts only revision `0011`. The client sets READ COMMITTED, the restricted functions reject other isolation levels, and ownership mutations recheck the revision after taking coordination locks. Schema provisioning stays outside worker startup.
+
+The isolated Compose definition uses a separate database and worker profile. PostgreSQL serializes claim and renewal by registered identity and permits one live lease per registration. A disposable login may register multiple independent process identities. Graceful shutdown uses a fenced release. An unconfirmed claim or renewal exits with status 3 and performs no follow-up ownership mutation. Hard-killed or unconfirmed leases age out by database time. Recovery closes only eligible unmarked work and never requeues marked or UNKNOWN executions. Provider credentials, synthetic adapter calls, marker creation, and finalization are outside the worker interface. The fixture grants and trusted database owners remain sandbox-only. [Worker process](../gateway/execution_worker.py) · [Disposable privileges](../tests/fixtures/m914_worker_privileges.sql) · [Sandbox Compose](../compose.m9-worker-sandbox.yaml)
+
 ## Failure recovery
 
 ```mermaid

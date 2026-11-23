@@ -30,6 +30,7 @@ from gateway.execution_crypto import (
     SandboxWrappingKeys,
 )
 from gateway.execution_store import CommandStoreError
+from gateway.execution_worker_store import ExecutionWorkerStore
 from gateway.identity import PRINCIPALS
 from gateway.telemetry import Telemetry
 from shared.database import execute, rows
@@ -617,6 +618,127 @@ async def revoked_refund_entitlement(db):
     finally:
         async with db.begin() as conn:
             await execute(conn, statement, enabled=True, actor=APPROVER)
+
+
+async def ownership_retry_snapshot(db, ident):
+    async with db.connect() as conn:
+        return [
+            await rows(
+                conn, f"SELECT * FROM {table} WHERE {key}=:id {ordering}", id=ident
+            )
+            for table, key, ordering in (
+                ("approvals", "id", ""),
+                ("executions", "id", ""),
+                ("execution_commands", "execution_id", ""),
+                ("execution_approval_decisions", "execution_id", ""),
+                ("execution_attempts", "execution_id", "ORDER BY generation"),
+                ("audit_events", "resource_id", "ORDER BY id"),
+                ("execution_events", "execution_id", "ORDER BY id"),
+                ("execution_receipts", "execution_id", ""),
+            )
+        ]
+
+
+@DB
+@pytest.mark.parametrize("phase", [ExecutionState.CLAIMED, ExecutionState.FAILED])
+def test_committed_approval_retry_after_ownership_transition(upgraded, phase):
+    async def check():
+        async with approvals_fixture(upgraded) as (
+            db,
+            store,
+            service,
+            payloads,
+            digests,
+        ):
+            ident = (await store.submit(REQUEST)).execution_id
+            if phase is ExecutionState.FAILED:
+                service = ExecutionApprovals(
+                    db, payloads, digests, timedelta(seconds=2)
+                )
+            original = await service.decide(ident, APPROVER, "APPROVED", REASON)
+            worker = ExecutionWorkerStore(db, WINDOW)
+            other = "platform-admin"
+            try:
+                lease = await worker.claim(uuid4())
+                assert lease and lease.owner.execution_id == ident
+                if phase is ExecutionState.FAILED:
+                    # Let the original deadline elapse without rewriting it.
+                    async with db.connect() as conn:
+                        await execute(
+                            conn,
+                            """
+                            SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM
+                                (dispatch_not_after-clock_timestamp()))))
+                            FROM execution_commands WHERE execution_id=:id
+                            """,
+                            id=ident,
+                        )
+                    recovered = await worker.recover_next()
+                    assert (
+                        recovered
+                        and recovered.execution_id == ident
+                        and recovered.state is phase
+                    )
+                async with db.begin() as conn:
+                    await execute(
+                        conn,
+                        """
+                        INSERT INTO execution_approval_entitlements(principal, customer_id, tool_id)
+                        VALUES (:actor, 'C-102', 'payments.issue_refund')
+                        """,
+                        actor=other,
+                    )
+                async with revoked_refund_entitlement(db):
+                    before = await ownership_retry_snapshot(db, ident)
+                    assert len(before[3]) == len(before[4]) == 1
+                    assert before[7] == []
+                    for _ in range(2):
+                        result = await service.decide(
+                            ident, APPROVER, "APPROVED", REASON
+                        )
+                        assert result == replace(
+                            original, execution_state=phase, replayed=True
+                        )
+                    for actor, reason in (
+                        (other, REASON),
+                        (APPROVER, "different reason"),
+                    ):
+                        with pytest.raises(
+                            CommandStoreError, match="^APPROVAL_ALREADY_DECIDED$"
+                        ):
+                            await service.decide(ident, actor, "APPROVED", reason)
+                    assert await ownership_retry_snapshot(db, ident) == before
+                    for table in ("execution_approval_decisions", "execution_commands"):
+                        async with db.begin() as conn:
+                            await execute(
+                                conn,
+                                f"""
+                                UPDATE {table} SET ciphertext=set_byte(ciphertext, 0,
+                                    get_byte(ciphertext, 0) # 1)
+                                WHERE execution_id=:id
+                                """,
+                                id=ident,
+                            )
+                        corrupted = await ownership_retry_snapshot(db, ident)
+                        with pytest.raises(
+                            CommandStoreError, match="^EXECUTION_PAYLOAD_UNAVAILABLE$"
+                        ):
+                            await service.decide(ident, APPROVER, "APPROVED", REASON)
+                        assert await ownership_retry_snapshot(db, ident) == corrupted
+            finally:
+                async with db.begin() as conn:
+                    await execute(
+                        conn,
+                        "DELETE FROM execution_attempts WHERE execution_id=:id",
+                        id=ident,
+                    )
+                    await execute(
+                        conn,
+                        "DELETE FROM execution_approval_entitlements WHERE principal=:actor",
+                        actor=other,
+                    )
+
+    asyncio.run(check())
 
 
 @DB

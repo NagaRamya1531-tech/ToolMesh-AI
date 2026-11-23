@@ -1,5 +1,15 @@
 # Changelog
 
+## M9.1.4 · Standalone ownership sandbox
+
+- Added an opt-in worker for PostgreSQL claim, renewal, fenced shutdown, and unmarked recovery. Startup requires schema revision 0011 and never runs migrations.
+- The sandbox worker uses a dedicated login and scoped database functions. The default deployment has no worker service and retains legacy dispatch ownership.
+
+## M9.1.4 · Synthetic send-marker and finalization testing
+
+- Added sandbox-only fenced markers and atomic outcome persistence for synthetic success, definitive no-effect rejection, and uncertain outcomes.
+- The test adapter records arrivals and effects independently of the execution ledger. Lost acknowledgments are checked against persisted evidence without replaying the adapter.
+
 ## M9.1.3 · Atomic protected approval and admission
 
 - Fixed retries after approver entitlement revocation. The original human can recover an identical committed decision without writing new evidence. New decisions still require an active scoped entitlement. The full Python suite passed 195 tests, including 18 new review cases.

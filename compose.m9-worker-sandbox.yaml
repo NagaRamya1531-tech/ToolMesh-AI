@@ -1,0 +1,42 @@
+# Standalone disposable project. Provision 0011 and the two test logins before
+# starting the worker profile. The worker itself never runs a migration.
+name: toolmesh-m914-sandbox
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: infra/postgres.Dockerfile
+    environment:
+      POSTGRES_DB: toolmesh
+      POSTGRES_USER: toolmesh_migrator
+      POSTGRES_PASSWORD: synthetic-ledger-test
+      TOOLMESH_APP_PASSWORD: synthetic-app-test
+    ports:
+      - "127.0.0.1:${TOOLMESH_SANDBOX_POSTGRES_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "toolmesh_migrator", "-d", "toolmesh"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  worker-a: &worker
+    profiles: ["ownership"]
+    build:
+      context: .
+      dockerfile: infra/api.Dockerfile
+    command: ["python", "-m", "gateway.execution_worker"]
+    environment:
+      TOOLMESH_SANDBOX_WORKER_ENABLED: "true"
+      TOOLMESH_SANDBOX_WORKER_LEASE_SECONDS: "4"
+      TOOLMESH_SANDBOX_WORKER_RENEW_SECONDS: "0.5"
+      TOOLMESH_SANDBOX_WORKER_DATABASE_URL: postgresql+asyncpg://m914_worker_a:disposable-ownership-worker@postgres/toolmesh
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 8s
+  worker-b:
+    <<: *worker
+    environment:
+      TOOLMESH_SANDBOX_WORKER_ENABLED: "true"
+      TOOLMESH_SANDBOX_WORKER_LEASE_SECONDS: "4"
+      TOOLMESH_SANDBOX_WORKER_RENEW_SECONDS: "0.5"
+      TOOLMESH_SANDBOX_WORKER_DATABASE_URL: postgresql+asyncpg://m914_worker_b:disposable-ownership-worker@postgres/toolmesh
