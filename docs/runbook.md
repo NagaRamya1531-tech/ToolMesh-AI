@@ -52,6 +52,17 @@ API_PORT=18002 WEB_PORT=15175 docker compose -p toolmesh-m2-fault down
 
 An absent receipt leaves the refund execution uncertain. Ordinary writes do not use the refund reconciler. Inspect the execution and domain records before any manual follow-up.
 
+### Verify the Step 6 synthetic refund slice
+
+Run the focused suite with a ToolMesh PostgreSQL image built from `infra/postgres.Dockerfile`. The tests create and remove their own containers and exercise both a fresh database and one upgraded with legacy history.
+
+```sh
+docker build -f infra/postgres.Dockerfile -t toolmesh-postgres-step6-test .
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_synthetic_refund_reconciliation_postgres.py
+```
+
+For each execution, inspect the original marked `SEND`, later `VERIFY` generations, and the receipt linked to the terminal verifier. An unresolved check leaves `next_check_at` on the `UNKNOWN` command. The sandbox entry point takes an execution ID. The test fixtures enable durable coordination inside their own databases.
+
 ## Reproduce an evaluation
 
 [Discovery evaluation methodology and raw results](discovery-evaluation.md) documents the pinned model, dataset split, expected files and exact commands. Evaluation runs are administrator-only and use an isolated synthetic corpus.

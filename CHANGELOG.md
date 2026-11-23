@@ -1,5 +1,11 @@
 # Changelog
 
+## M9.1.4 Step 6 · Synthetic refund reconciliation review
+
+- Added a callable-by-ID verification path for the disposable refund sandbox. An expired marked send can be parked as `UNKNOWN`. Later verification generations read the bound ledger evidence and either record one fenced terminal receipt or schedule another check.
+- Added PostgreSQL tests for both schema baselines, including competing verifiers, delayed evidence, crashes, lost commit acknowledgments, invalid bindings, and the wrong wrapping key. See the [focused test command](docs/runbook.md#verify-the-step-6-synthetic-refund-slice).
+- Verified 22 focused PostgreSQL cases and 414 regression cases. Two refund workflow cases requiring a Compose stack were skipped. Ruff lint and formatting, mypy, and Git whitespace checks passed.
+
 ## M9.1.4 · Synthetic IT restart sandbox
 
 - Added a test-only restart flow with a restart-specific marker and lookup evidence contract. PostgreSQL records restart arrivals separately from the committed boot generation.

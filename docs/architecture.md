@@ -139,6 +139,10 @@ Communication runs as a third isolated MCP service. Its local message outbox enf
 
 [ADR 0003](adr/0003-refund-approval-and-reconciliation.md)
 
+### Synthetic refund verification
+
+The Step 6 sandbox can park an expired, marked refund as `UNKNOWN` and claim a separate `VERIFY` generation by execution ID. The original `SEND` remains the source of the operation binding. The verifier reconstructs the sealed intent and looks up the synthetic ledger. A signed matching outcome closes the verification attempt, writes one `LOOKUP` receipt, and updates the command and public execution in one PostgreSQL transaction. Missing or inconclusive evidence closes the attempt as `UNKNOWN` and sets the next check time. An expired verification lease can be reclaimed on a later call. The standalone worker does not poll this path.
+
 ## Discovery and release lifecycle
 
 The service registry maps stable IDs to operator-configured Compose targets. Administrators register targets and can edit their display names. The read-only probes fetch authenticated OpenAPI descriptions and native MCP tool lists. For IT, the crawler reads the generated Protobuf descriptor after confirming the configured endpoint over gRPC. It skips operations outside the adapter map and exposes unsupported entries in the crawl result.

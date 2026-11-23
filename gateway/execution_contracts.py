@@ -113,6 +113,23 @@ class ExecutionLease(Record):
     expires_at: AwareDatetime
 
 
+class RefundVerification(Record):
+    lease: ExecutionLease
+    sender: ExecutionOwner
+    intent_binding: Digest = Field(repr=False)
+
+    @model_validator(mode="after")
+    def validate_generations(self) -> Self:
+        if (
+            self.lease.owner.execution_id != self.sender.execution_id
+            or self.lease.owner.generation <= self.sender.generation
+        ):
+            raise ValueError(
+                "verification requires a later generation of the original execution"
+            )
+        return self
+
+
 class SyntheticSendMarker(Record):
     owner: ExecutionOwner
     marked_at: AwareDatetime

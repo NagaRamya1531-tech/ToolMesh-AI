@@ -17,6 +17,7 @@ from gateway.execution_contracts import (
     ExecutionOwner,
     ExecutionState,
     PreSendTransition,
+    RefundVerification,
     SyntheticEvidenceContract,
     SyntheticOutcome,
     SyntheticSendMarker,
@@ -44,6 +45,9 @@ _LOCK_EXECUTION = "SELECT id FROM executions WHERE id=:id FOR UPDATE"
 
 SyntheticAdmission = Callable[[AsyncConnection], Awaitable[bytes]]
 _SYNTHETIC_MARKER_ACTION = "SYNTHETIC_SEND_MARKED"
+_REFUND_MARKER_PREFIX = (
+    f"{_SYNTHETIC_MARKER_ACTION}:payments.issue_refund:refund-ledger.v2:"
+)
 
 
 def _synthetic_tool(contract: SyntheticEvidenceContract | None) -> str:
@@ -627,6 +631,248 @@ class ExecutionWorkerStore:
             await self._finish_marked(conn, owner, ExecutionState.UNKNOWN, now, None)
             return True
 
+    async def _lock_refund_send(
+        self,
+        conn: AsyncConnection,
+        execution_id: UUID,
+        *,
+        outcome: str | None = "UNKNOWN",
+    ) -> tuple[ExecutionOwner, bytes] | None:
+        """Read the original protected refund marker under the execution lock."""
+        sends = await rows(
+            conn,
+            """
+            SELECT a.worker_id, a.generation FROM execution_attempts a
+            JOIN execution_commands c USING (execution_id)
+            WHERE a.execution_id=:id AND c.tool_id='payments.issue_refund'
+              AND a.kind='SEND' AND a.send_marked_at IS NOT NULL
+              AND a.outcome IS NOT DISTINCT FROM CAST(:outcome AS text)
+            FOR UPDATE OF a
+            """,
+            id=execution_id,
+            outcome=outcome,
+        )
+        if len(sends) != 1:
+            return None
+        await self._lock_synthetic_audit_guards(conn)
+        markers = await rows(
+            conn,
+            """
+            SELECT action FROM public.audit_events WHERE resource_id=:id
+              AND starts_with(action,:prefix)
+            """,
+            id=execution_id,
+            prefix=_REFUND_MARKER_PREFIX,
+        )
+        if not markers:
+            return None
+        if len(markers) != 1:
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+        try:
+            binding = bytes.fromhex(
+                markers[0]["action"].removeprefix(_REFUND_MARKER_PREFIX)
+            )
+        except ValueError:
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH") from None
+        if len(binding) != 32:
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+        sender = ExecutionOwner(execution_id=execution_id, **sends[0])
+        await self._verify_marker_contract(conn, sender, binding, None)
+        return sender, binding
+
+    async def recover_expired_synthetic_refund(self, owner: ExecutionOwner) -> bool:
+        """Park an expired bound refund without issuing or authorizing a send."""
+        self._require_synthetic_sandbox()
+        async with self._transaction() as (conn, _):
+            locked = await self._lock_marked(conn, owner)
+            if not locked:
+                return False
+            original = await self._lock_refund_send(
+                conn, owner.execution_id, outcome=None
+            )
+            if original is None or original[0] != owner:
+                return False
+            now = await self._clock(conn)
+            if now < locked[0]["lease_expires_at"]:
+                return False
+            await self._finish_marked(
+                conn, owner, ExecutionState.UNKNOWN, now, None, next_check_at=now
+            )
+            return True
+
+    @staticmethod
+    async def _lock_refund_unknown(
+        conn: AsyncConnection, execution_id: UUID
+    ) -> dict | None:
+        if not await rows(conn, _LOCK_EXECUTION, id=execution_id):
+            return None
+        commands = await rows(
+            conn,
+            """
+            SELECT c.generation, c.lease_owner, c.lease_expires_at, c.next_check_at
+            FROM execution_commands c JOIN executions e ON e.id=c.execution_id
+            WHERE c.execution_id=:id AND c.state='UNKNOWN' AND e.status='UNKNOWN'
+              AND c.tool_id='payments.issue_refund' AND NOT c.verification_only
+            FOR UPDATE OF c
+            """,
+            id=execution_id,
+        )
+        return commands[0] if commands else None
+
+    async def claim_synthetic_refund_verification(
+        self, execution_id: UUID, worker_id: UUID
+    ) -> RefundVerification | None:
+        self._require_synthetic_sandbox()
+        async with self._transaction() as (conn, _):
+            command = await self._lock_refund_unknown(conn, execution_id)
+            if command is None:
+                return None
+            original = await self._lock_refund_send(conn, execution_id)
+            if original is None:
+                return None
+            now = await self._clock(conn)
+            due = command["next_check_at"]
+            expiry = command["lease_expires_at"]
+            if (due is not None and due > now) or (expiry is not None and expiry > now):
+                return None
+            if expiry is not None:
+                expired = ExecutionOwner(
+                    execution_id=execution_id,
+                    generation=command["generation"],
+                    worker_id=command["lease_owner"],
+                )
+                await self._close_refund_verification(conn, expired, now)
+                await self._synthetic_audit(
+                    conn, expired, "SYNTHETIC_VERIFY_LEASE_EXPIRED"
+                )
+            owner = ExecutionOwner(
+                execution_id=execution_id,
+                generation=command["generation"] + 1,
+                worker_id=worker_id,
+            )
+            expires_at = now + self._lease_duration
+            await execute(
+                conn,
+                """
+                UPDATE execution_commands SET generation=:generation, lease_owner=:worker_id,
+                    lease_expires_at=:expires, next_check_at=NULL WHERE execution_id=:execution_id
+                """,
+                expires=expires_at,
+                **owner.model_dump(),
+            )
+            await execute(
+                conn,
+                """
+                INSERT INTO execution_attempts(execution_id,generation,worker_id,kind,claimed_at)
+                VALUES (:execution_id,:generation,:worker_id,'VERIFY',:now)
+                """,
+                now=now,
+                **owner.model_dump(),
+            )
+            await self._synthetic_audit(conn, owner, "SYNTHETIC_VERIFY_CLAIMED")
+            return RefundVerification(
+                lease=ExecutionLease(owner=owner, expires_at=expires_at),
+                sender=original[0],
+                intent_binding=original[1],
+            )
+
+    @staticmethod
+    async def _close_refund_verification(
+        conn: AsyncConnection, owner: ExecutionOwner, now: datetime
+    ) -> None:
+        closed = await rows(
+            conn,
+            """
+            UPDATE execution_attempts SET outcome='UNKNOWN', finished_at=:now
+            WHERE execution_id=:execution_id AND generation=:generation AND worker_id=:worker_id
+              AND kind='VERIFY' AND outcome IS NULL RETURNING generation
+            """,
+            now=now,
+            **owner.model_dump(),
+        )
+        if not closed:
+            raise CommandStoreError("EXECUTION_OWNERSHIP_CONFLICT")
+
+    async def finish_synthetic_refund_verification(
+        self,
+        claim: RefundVerification,
+        *,
+        evidence: SyntheticOutcome | None = None,
+        defer_for: timedelta = timedelta(seconds=5),
+        deferral_reason: Literal[
+            "NO_EVIDENCE", "UNAVAILABLE", "MISMATCH"
+        ] = "NO_EVIDENCE",
+    ) -> ExecutionState | None:
+        self._require_synthetic_sandbox()
+        if defer_for <= timedelta(0):
+            raise ValueError("verification deferral must be positive")
+        owner = claim.lease.owner
+        async with self._transaction() as (conn, _):
+            command = await self._lock_refund_unknown(conn, owner.execution_id)
+            if command is None or (
+                command["generation"] != owner.generation
+                or command["lease_owner"] != owner.worker_id
+                or command["lease_expires_at"] != claim.lease.expires_at
+            ):
+                return None
+            original = await self._lock_refund_send(conn, owner.execution_id)
+            if original != (claim.sender, claim.intent_binding):
+                raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+            attempts = await rows(
+                conn,
+                """
+                SELECT generation FROM execution_attempts
+                WHERE execution_id=:execution_id AND generation=:generation
+                  AND worker_id=:worker_id AND kind='VERIFY' AND outcome IS NULL
+                FOR UPDATE
+                """,
+                **owner.model_dump(),
+            )
+            now = await self._clock(conn)
+            if not attempts or now >= command["lease_expires_at"]:
+                return None
+            if evidence is not None:
+                consumed = await rows(
+                    conn,
+                    """
+                    SELECT actor FROM public.audit_events WHERE resource_id=:id
+                      AND action='SYNTHETIC_INVOCATION_CONSUMED'
+                    """,
+                    id=owner.execution_id,
+                )
+                if (
+                    evidence.owner != claim.sender
+                    or evidence.intent_binding != claim.intent_binding
+                    or evidence.evidence_contract is not None
+                    or consumed != [{"actor": str(claim.sender.worker_id)}]
+                ):
+                    raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+                target, digest = self._synthetic_result(evidence)
+                await self._finish_marked(
+                    conn,
+                    owner,
+                    target,
+                    now,
+                    digest,
+                    evidence_source="LOOKUP",
+                    expected_state=ExecutionState.UNKNOWN,
+                )
+                return target
+            await self._close_refund_verification(conn, owner, now)
+            await execute(
+                conn,
+                """
+                UPDATE execution_commands SET lease_owner=NULL, lease_expires_at=NULL,
+                    next_check_at=:due WHERE execution_id=:id
+                """,
+                due=now + defer_for,
+                id=owner.execution_id,
+            )
+            await self._synthetic_audit(
+                conn, owner, f"SYNTHETIC_VERIFY_DEFERRED_{deferral_reason}"
+            )
+            return ExecutionState.UNKNOWN
+
     async def _finish_marked(
         self,
         conn: AsyncConnection,
@@ -636,17 +882,24 @@ class ExecutionWorkerStore:
         digest: bytes | None,
         *,
         evidence_source: Literal["RESPONSE", "LOOKUP"] = "RESPONSE",
+        expected_state: ExecutionState = ExecutionState.DISPATCHING,
+        next_check_at: datetime | None = None,
     ) -> None:
-        await execute(
+        finished = await rows(
             conn,
             """
             UPDATE execution_attempts SET outcome=:outcome, finished_at=:now
             WHERE execution_id=:execution_id AND generation=:generation AND worker_id=:worker_id
+              AND kind=:kind AND outcome IS NULL
+            RETURNING generation
             """,
             outcome=target.value,
             now=now,
+            kind="VERIFY" if expected_state is ExecutionState.UNKNOWN else "SEND",
             **owner.model_dump(),
         )
+        if not finished:
+            raise CommandStoreError("EXECUTION_OWNERSHIP_CONFLICT")
         if digest is not None:
             await execute(
                 conn,
@@ -666,11 +919,12 @@ class ExecutionWorkerStore:
         await execute(
             conn,
             """
-            UPDATE execution_commands SET state=:state, lease_owner=NULL, lease_expires_at=NULL
-            WHERE execution_id=:id
+            UPDATE execution_commands SET state=:state, lease_owner=NULL, lease_expires_at=NULL,
+                next_check_at=:next_check_at WHERE execution_id=:id
             """,
             id=owner.execution_id,
             state=target.value,
+            next_check_at=next_check_at,
         )
         error = {
             ExecutionState.SUCCEEDED: None,
@@ -681,16 +935,22 @@ class ExecutionWorkerStore:
             conn,
             """
             UPDATE executions SET status=:status, error_code=:error, finished_at=:now
-            WHERE id=:id AND status='RUNNING' RETURNING id
+            WHERE id=:id AND status=:expected_status RETURNING id
             """,
             id=owner.execution_id,
             status=target.public_status,
+            expected_status=expected_state.public_status,
             error=error,
             now=now,
         )
         if not result:
             raise CommandStoreError("EXECUTION_OWNERSHIP_CONFLICT")
-        await self._synthetic_audit(conn, owner, f"SYNTHETIC_{target.value}")
+        action_prefix = (
+            "SYNTHETIC_VERIFY"
+            if expected_state is ExecutionState.UNKNOWN
+            else "SYNTHETIC"
+        )
+        await self._synthetic_audit(conn, owner, f"{action_prefix}_{target.value}")
 
     async def read_synthetic_attempt(
         self, owner: ExecutionOwner, evidence: SyntheticOutcome | None = None
@@ -700,15 +960,53 @@ class ExecutionWorkerStore:
         if evidence is not None and evidence.owner != owner:
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         expected = self._synthetic_result(evidence) if evidence is not None else None
+        source: Literal["RESPONSE", "LOOKUP"] = (
+            "LOOKUP"
+            if evidence is not None and evidence.intent_binding is not None
+            else "RESPONSE"
+        )
+        return await self._read_synthetic_attempt(owner, expected, source)
+
+    async def read_completed_synthetic_refund_verification(
+        self, claim: RefundVerification, evidence: SyntheticOutcome
+    ) -> ExecutionState | None:
+        """Read back a canonical result after an ambiguous verification commit."""
+        self._require_synthetic_sandbox()
+        if (
+            evidence.owner != claim.sender
+            or evidence.intent_binding != claim.intent_binding
+            or evidence.evidence_contract is not None
+        ):
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+        owner = claim.lease.owner
+        observed = await self._read_synthetic_attempt(
+            owner, self._synthetic_result(evidence), "LOOKUP"
+        )
+        if (
+            observed is not None
+            and observed["receipt_matches"]
+            and observed["kind"] == "VERIFY"
+            and observed["current_generation"] == owner.generation
+        ):
+            return observed["state"]
+        return None
+
+    async def _read_synthetic_attempt(
+        self,
+        owner: ExecutionOwner,
+        expected: tuple[ExecutionState, bytes] | None,
+        source: Literal["RESPONSE", "LOOKUP"],
+    ) -> dict | None:
         try:
             async with self._db.connect() as conn:
                 result = await rows(
                     conn,
                     """
-                    SELECT c.state, c.generation AS current_generation,
-                           a.send_marked_at, a.outcome, r.evidence_digest, r.outcome AS receipt_outcome,
-                           r.evidence_source
+                    SELECT c.state, c.generation AS current_generation, e.status,
+                           a.kind, a.send_marked_at, a.outcome, r.evidence_digest,
+                           r.outcome AS receipt_outcome, r.evidence_source, r.external_reference
                     FROM execution_attempts a JOIN execution_commands c USING (execution_id)
+                    JOIN executions e ON e.id=a.execution_id
                     LEFT JOIN execution_receipts r ON r.execution_id=a.execution_id
                         AND r.generation=a.generation
                     WHERE a.execution_id=:execution_id AND a.generation=:generation
@@ -722,6 +1020,7 @@ class ExecutionWorkerStore:
             return None
         item = result[0]
         return {
+            "kind": item["kind"],
             "state": ExecutionState(item["state"]),
             "current_generation": item["current_generation"],
             "marked": item["send_marked_at"] is not None,
@@ -729,18 +1028,20 @@ class ExecutionWorkerStore:
             "receipt_matches": expected is not None
             and (
                 item["state"],
+                item["status"],
                 item["outcome"],
                 item["receipt_outcome"],
                 item["evidence_digest"],
                 item["evidence_source"],
+                item["external_reference"],
             )
             == (
                 expected[0],
+                expected[0].public_status,
                 expected[0],
                 expected[0],
                 expected[1],
-                "LOOKUP"
-                if evidence is not None and evidence.intent_binding is not None
-                else "RESPONSE",
+                source,
+                f"synthetic:{owner.execution_id}",
             ),
         }
