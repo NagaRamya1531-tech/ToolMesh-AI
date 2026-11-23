@@ -316,6 +316,12 @@ The opt-in refund exercise runs from an encrypted, approved sandbox command to a
 
 The simulator commits arrivals separately from capture balance changes. A stable operation ID reserves one downstream outcome, and the effect and its outcome commit together. The verifier rereads the downstream ledger on a separate transaction. Its evidence binds workspace, customer, sealed intent, operation ID and ownership generation. A rejected synthetic capture can produce a definitive no-effect receipt. Missing or mismatched evidence cannot produce a successful receipt. Recovery reads evidence without invoking the adapter. A live fence can persist matching evidence after a finalization rollback. An expired fence preserves UNKNOWN even when a late effect can be observed. If a wrapping key is unavailable, an expired marked attempt can still transition to UNKNOWN through the ownership fence without decrypting the request or writing a receipt. These results apply to the disposable simulator. Production refund and restart guarantees require separate evidence and authorization. [Sandbox flow](../tests/synthetic_refund_flow.py) · [PostgreSQL cases](../tests/test_synthetic_refund_postgres.py)
 
+### Synthetic IT restart vertical slice
+
+The restart adapter uses the pinned `it.restart_service` contract with customer and service IDs. The test flow reuses the refund orchestration, approval revalidation, one-time invocation permission, and recovery path. The default gateway and standalone ownership worker have no adapter entry point.
+
+The disposable restart ledger commits arrival records separately. A stable operation ID reserves one outcome, and the scoped simulated service's boot generation advances in the same transaction as its successful outcome. A separate lookup signs the admitted binding, operation, owner generation, verdict, and resulting boot generation. The shared finalizer checks the restart evidence version against the protected marker under the existing locks. Refund and generic signatures cannot finalize a restart marker. A disabled service records definitive no-effect evidence without advancing its generation. Inconclusive evidence preserves UNKNOWN and authorizes no replacement send. The fixture trusts its database owner and signer. These tests do not establish a real provider's receipt, deduplication, or retention guarantees. [Restart simulator](../tests/synthetic_it_restart.py) · [PostgreSQL scenarios](../tests/test_synthetic_it_restart_postgres.py)
+
 ## Failure recovery
 
 ```mermaid

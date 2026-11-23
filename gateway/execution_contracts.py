@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 ProtectedTool = Literal["payments.issue_refund", "it.restart_service"]
+SyntheticEvidenceContract = Literal["it-restart-ledger.v1"]
 NonEmpty = Annotated[str, Field(min_length=1)]
 PositiveInt = Annotated[int, Field(ge=1)]
 Generation = Annotated[int, Field(ge=0)]
@@ -124,6 +125,8 @@ class SyntheticOutcome(Record):
     result: Literal["EFFECT_COMMITTED", "DEFINITIVE_NO_EFFECT"]
     attestation: Digest = Field(repr=False)
     intent_binding: Digest | None = Field(default=None, repr=False)
+    evidence_contract: SyntheticEvidenceContract | None = None
+    effect_version: Annotated[int, Field(strict=True, gt=0)] | None = None
 
 
 class PreSendTransition(Record):

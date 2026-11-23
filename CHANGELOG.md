@@ -1,5 +1,10 @@
 # Changelog
 
+## M9.1.4 · Synthetic IT restart sandbox
+
+- Added a test-only restart flow with a restart-specific marker and lookup evidence contract. PostgreSQL records restart arrivals separately from the committed boot generation.
+- The shared sandbox flow retains one-time invocation, evidence-only recovery, and fenced finalization for both adapters.
+
 ## M9.1.4 · Synthetic refund sandbox
 
 - Added a test-only refund flow with authorization revalidation, single-use invocation permission, independently persisted effect evidence, and fenced finalization.

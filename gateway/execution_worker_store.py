@@ -17,6 +17,7 @@ from gateway.execution_contracts import (
     ExecutionOwner,
     ExecutionState,
     PreSendTransition,
+    SyntheticEvidenceContract,
     SyntheticOutcome,
     SyntheticSendMarker,
 )
@@ -45,12 +46,24 @@ SyntheticAdmission = Callable[[AsyncConnection], Awaitable[bytes]]
 _SYNTHETIC_MARKER_ACTION = "SYNTHETIC_SEND_MARKED"
 
 
-def _synthetic_marker_action(binding: bytes | None) -> str:
-    if binding is None:
+def _synthetic_tool(contract: SyntheticEvidenceContract | None) -> str:
+    if contract is None:
+        return "payments.issue_refund"
+    if contract == "it-restart-ledger.v1":
+        return "it.restart_service"
+    raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+
+
+def _synthetic_marker_action(
+    binding: bytes | None, contract: SyntheticEvidenceContract | None
+) -> str:
+    if binding is None and contract is None:
         return _SYNTHETIC_MARKER_ACTION
-    if len(binding) != 32:
+    if binding is None or len(binding) != 32:
         raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
-    return f"{_SYNTHETIC_MARKER_ACTION}:payments.issue_refund:refund-ledger.v2:{binding.hex()}"
+    tool = _synthetic_tool(contract)
+    version = contract or "refund-ledger.v2"
+    return f"{_SYNTHETIC_MARKER_ACTION}:{tool}:{version}:{binding.hex()}"
 
 
 async def _admit_synthetic(
@@ -66,8 +79,37 @@ async def _admit_synthetic(
 
 def synthetic_evidence_bytes(evidence: SyntheticOutcome) -> bytes:
     content = evidence.model_dump(
-        mode="json", exclude={"attestation", "intent_binding"}
+        mode="json",
+        exclude={
+            "attestation",
+            "intent_binding",
+            "evidence_contract",
+            "effect_version",
+        },
     )
+    if evidence.evidence_contract is not None:
+        version = evidence.effect_version
+        if (
+            evidence.intent_binding is None
+            or (
+                evidence.result == "EFFECT_COMMITTED"
+                and (type(version) is not int or version <= 0)
+            )
+            or (evidence.result == "DEFINITIVE_NO_EFFECT" and version is not None)
+        ):
+            raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
+        _synthetic_tool(evidence.evidence_contract)
+        return canonical_json(
+            [
+                "synthetic-outcome.v3",
+                evidence.evidence_contract,
+                content,
+                evidence.intent_binding.hex(),
+                evidence.effect_version,
+            ]
+        )
+    if evidence.effect_version is not None:
+        raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
     if evidence.intent_binding is None:
         return canonical_json(["synthetic-outcome.v1", content])
     return canonical_json(
@@ -341,11 +383,16 @@ class ExecutionWorkerStore:
         )
 
     async def mark_synthetic_send(
-        self, owner: ExecutionOwner, *, admit: SyntheticAdmission | None = None
+        self,
+        owner: ExecutionOwner,
+        *,
+        admit: SyntheticAdmission | None = None,
+        evidence_contract: SyntheticEvidenceContract | None = None,
     ) -> SyntheticSendMarker | None:
         self._require_synthetic_sandbox()
         async with self._transaction() as (conn, revision):
             binding = await _admit_synthetic(conn, admit)
+            action = _synthetic_marker_action(binding, evidence_contract)
             command = await self._lock_owned(conn, owner)
             if not command:
                 return None
@@ -357,8 +404,9 @@ class ExecutionWorkerStore:
             if binding is not None:
                 if not await rows(
                     conn,
-                    "SELECT 1 FROM execution_commands WHERE execution_id=:id AND tool_id='payments.issue_refund'",
+                    "SELECT 1 FROM execution_commands WHERE execution_id=:id AND tool_id=:tool",
                     id=owner.execution_id,
+                    tool=_synthetic_tool(evidence_contract),
                 ):
                     raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
                 await self._lock_synthetic_audit_guards(conn)
@@ -386,7 +434,7 @@ class ExecutionWorkerStore:
                 "UPDATE execution_commands SET state='DISPATCHING' WHERE execution_id=:id",
                 id=owner.execution_id,
             )
-            await self._synthetic_audit(conn, owner, _synthetic_marker_action(binding))
+            await self._synthetic_audit(conn, owner, action)
             return SyntheticSendMarker(
                 owner=owner, marked_at=now, admission_revision=revision
             )
@@ -429,7 +477,10 @@ class ExecutionWorkerStore:
 
     @staticmethod
     async def _verify_marker_contract(
-        conn: AsyncConnection, owner: ExecutionOwner, binding: bytes | None
+        conn: AsyncConnection,
+        owner: ExecutionOwner,
+        binding: bytes | None,
+        contract: SyntheticEvidenceContract | None,
     ) -> None:
         # The execution and its single marked attempt are already locked.
         matching = await rows(
@@ -443,7 +494,10 @@ class ExecutionWorkerStore:
             prefix=f"{_SYNTHETIC_MARKER_ACTION}:",
         )
         if matching != [
-            {"actor": str(owner.worker_id), "action": _synthetic_marker_action(binding)}
+            {
+                "actor": str(owner.worker_id),
+                "action": _synthetic_marker_action(binding, contract),
+            }
         ]:
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
 
@@ -463,7 +517,11 @@ class ExecutionWorkerStore:
         )
 
     async def consume_synthetic_send(
-        self, marker: SyntheticSendMarker, *, admit: SyntheticAdmission | None = None
+        self,
+        marker: SyntheticSendMarker,
+        *,
+        admit: SyntheticAdmission | None = None,
+        evidence_contract: SyntheticEvidenceContract | None = None,
     ) -> bool:
         """Consume invocation permission. Only an acknowledged commit permits a send."""
         self._require_synthetic_sandbox()
@@ -479,7 +537,9 @@ class ExecutionWorkerStore:
                 id=marker.owner.execution_id,
             )
             await self._lock_synthetic_audit_guards(conn)
-            await self._verify_marker_contract(conn, marker.owner, binding)
+            await self._verify_marker_contract(
+                conn, marker.owner, binding, evidence_contract
+            )
             if await self._synthetic_send_consumed(conn, marker.owner.execution_id):
                 return False
             now = await self._clock(conn)
@@ -527,7 +587,10 @@ class ExecutionWorkerStore:
             command, _ = locked
             await self._lock_synthetic_audit_guards(conn)
             await self._verify_marker_contract(
-                conn, evidence.owner, evidence.intent_binding
+                conn,
+                evidence.owner,
+                evidence.intent_binding,
+                evidence.evidence_contract,
             )
             if not await self._synthetic_send_consumed(
                 conn, evidence.owner.execution_id
