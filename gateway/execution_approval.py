@@ -45,6 +45,7 @@ class ApprovalResult:
     execution_state: ExecutionState
     dispatch_not_after: datetime | None
     replayed: bool = False
+    error_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,8 @@ class ExecutionApprovals:
         actor: str,
         decision: Literal["APPROVED", "REJECTED"],
         reason: str,
+        *,
+        workspace_id: str | None = None,
     ) -> ApprovalResult:
         if decision not in ("APPROVED", "REJECTED") or not isinstance(reason, str):
             raise CommandStoreError("INVALID_DECISION")
@@ -109,10 +112,27 @@ class ExecutionApprovals:
         except ValueError:
             raise CommandStoreError("INVALID_DECISION") from None
         async with self._transaction() as (conn, revision):
+            principal = await resolve_principal(conn, actor)
+            if workspace_id is not None and (
+                principal is None
+                or principal.kind != "human"
+                or not await rows(
+                    conn,
+                    """
+                    SELECT 1 FROM execution_commands
+                    WHERE execution_id=:id AND workspace_id=:workspace AND customer_id=:customer
+                      AND requester<>:actor
+                    """,
+                    id=execution_id,
+                    workspace=workspace_id,
+                    customer=principal.customer,
+                    actor=actor,
+                )
+            ):
+                raise CommandStoreError("APPROVAL_NOT_AVAILABLE")
             item = await self._lock(conn, execution_id)
             approval = item.approval
             status = ApprovalState(approval["status"])
-            principal = await resolve_principal(conn, actor)
             if (
                 principal is None
                 or principal.kind != "human"
@@ -321,7 +341,9 @@ class ExecutionApprovals:
             id=execution_id,
         )
         execution = await rows(
-            conn, "SELECT * FROM executions WHERE id=:id FOR UPDATE", id=execution_id
+            conn,
+            "SELECT id,principal,tool_id,version,status,error_code FROM executions WHERE id=:id FOR UPDATE",
+            id=execution_id,
         )
         approval = await rows(
             conn, "SELECT * FROM approvals WHERE id=:id FOR UPDATE", id=execution_id
@@ -528,19 +550,40 @@ class ExecutionApprovals:
         state = ExecutionState(item.command["state"])
         expected = {
             ApprovalState.PENDING: {ExecutionState.PENDING_APPROVAL},
-            ApprovalState.APPROVED: {ExecutionState.READY, ExecutionState.CLAIMED},
+            ApprovalState.APPROVED: {
+                ExecutionState.READY,
+                ExecutionState.CLAIMED,
+                ExecutionState.DISPATCHING,
+                ExecutionState.UNKNOWN,
+                ExecutionState.SUCCEEDED,
+                ExecutionState.DENIED,
+                ExecutionState.FAILED,
+            },
             ApprovalState.EXPIRED: {ExecutionState.EXPIRED},
             ApprovalState.REJECTED: {ExecutionState.REJECTED},
         }
-        deadline_failure = (
-            status is ApprovalState.APPROVED
-            and state is ExecutionState.FAILED
-            and item.execution["error_code"] == "DISPATCH_DEADLINE_EXCEEDED"
-        )
         if (
-            state not in expected[status] and not deadline_failure
-        ) or state.public_status != item.execution["status"]:
+            state not in expected[status]
+            or state.public_status != item.execution["status"]
+        ):
             raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
+        error_code = None
+        if state is ExecutionState.FAILED:
+            recorded = item.execution["error_code"]
+            error_code = (
+                recorded
+                if recorded
+                in {
+                    "DISPATCH_DEADLINE_EXCEEDED",
+                    "SYNTHETIC_DEFINITIVE_NO_EFFECT",
+                }
+                else "EXECUTION_FAILED"
+            )
         return ApprovalResult(
-            execution_id, status, state, item.command["dispatch_not_after"], replayed
+            execution_id,
+            status,
+            state,
+            item.command["dispatch_not_after"],
+            replayed,
+            error_code,
         )

@@ -38,6 +38,18 @@ async def event(conn: AsyncConnection, actor: str, action: str, resource: UUID):
     )
 
 
+async def legacy_admission_open(conn: AsyncConnection) -> bool:
+    [revision] = await rows(
+        conn,
+        "SELECT to_regprocedure('public.protected_legacy_open()') IS NOT NULL AS enabled",
+    )
+    if not revision["enabled"]:
+        # Older isolated approval fixtures predate the public dispatch selector.
+        return True
+    [gate] = await rows(conn, "SELECT public.protected_legacy_open() AS enabled")
+    return bool(gate["enabled"])
+
+
 class Approvals:
     def __init__(self, db: AsyncEngine, dispatch: Dispatch, telemetry: Telemetry):
         self.db = db
@@ -76,6 +88,8 @@ class Approvals:
     ):
         bound = intent_hash(principal.id, tool, version, args)
         async with self.db.begin() as conn:
+            if not await legacy_admission_open(conn):
+                raise HTTPException(503, "DURABLE_ADMISSION_DISABLED")
             await execute(
                 conn,
                 "SELECT pg_advisory_xact_lock(hashtextextended(:key,0))",
@@ -151,6 +165,8 @@ class Approvals:
 
     async def expire(self):
         async with self.db.begin() as conn:
+            if not await legacy_admission_open(conn):
+                return
             expired = await rows(
                 conn,
                 """
@@ -204,6 +220,8 @@ class Approvals:
             raise HTTPException(403, "FORBIDDEN")
         await self.expire()
         async with self.db.begin() as conn:
+            if not await legacy_admission_open(conn):
+                raise HTTPException(503, "DURABLE_ADMISSION_DISABLED")
             values = await rows(
                 conn,
                 """
@@ -337,6 +355,8 @@ class Approvals:
     async def reconcile(self):
         await self.expire()
         async with self.db.begin() as conn:
+            if not await legacy_admission_open(conn):
+                return
             candidates = await rows(
                 conn,
                 """

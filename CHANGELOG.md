@@ -1,5 +1,10 @@
 # Changelog
 
+## M9 Slice A · Protected public admission
+
+- Connected the protected refund and restart admission and decision services to the normal local REST and MCP gateway paths. Revision 0012 defines a dedicated API privilege role. Durable decisions only commit dispatch eligibility. The actual gate remains LEGACY.
+- Enforced durable shared-row ownership in PostgreSQL, scoped durable audit events before the feed limit, validated the effective protected login at startup, and corrected identical approval retries after terminal failure.
+
 ## M9.1.4 Step 6 · Synthetic IT restart verification
 
 - Added explicit parking for expired marked restart SENDs and automatic VERIFY discovery in the disposable worker. SEND renewal retains its own database checkout, and the verification lane considers one candidate per enabled tool each poll.

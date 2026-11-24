@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 from starlette.exceptions import HTTPException
@@ -30,9 +31,15 @@ from gateway.agent_runs import AgentRuns, build_agent_api
 from gateway.config import Settings
 from gateway.discovery import Discovery
 from gateway.embeddings import Embeddings
+from gateway.execution_crypto import (
+    CommandDigests,
+    PayloadProtection,
+    SandboxWrappingKeys,
+)
 from gateway.identity import Identity
 from gateway.interfaces import build_api, build_mcp
 from gateway.limits import LimitBody
+from gateway.protected_dispatch import ProtectedDispatch
 from gateway.provider import provider_api
 from gateway.recovery import recovery_worker
 from gateway.runtime import Runtime
@@ -95,6 +102,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     embeddings = Embeddings(config.embedding_path)
     discovery = Discovery(engine, embeddings)
     evaluations = Evaluations(engine, embeddings)
+    protected = None
+    protected_engine = None
+    credentials = (
+        config.protected_database_url,
+        config.protected_wrapping_keys,
+        config.protected_digest_keys,
+    )
+    if any(credentials):
+        if not all(credentials):
+            raise ValueError("incomplete protected execution configuration")
+        try:
+            entries = [
+                entry.split(":", 1)
+                for entry in secret(config.protected_wrapping_keys).split(",")
+            ]
+            wrapping = {int(version): bytes.fromhex(key) for version, key in entries}
+            lookup, intent = map(
+                bytes.fromhex, secret(config.protected_digest_keys).split(":")
+            )
+            if len(entries) != len(wrapping) or {lookup, intent} & set(
+                wrapping.values()
+            ):
+                raise ValueError
+            payloads = PayloadProtection(
+                SandboxWrappingKeys(wrapping, config.protected_active_key)
+            )
+            digests = CommandDigests(lookup, intent)
+        except (TypeError, ValueError):
+            raise ValueError("invalid protected execution keys") from None
+        protected_url = make_url(secret(config.protected_database_url))
+        primary_url = engine.url
+        if (
+            protected_url.set(
+                username=primary_url.username, password=primary_url.password
+            )
+            != primary_url
+            or protected_url.username == primary_url.username
+        ):
+            raise ValueError(
+                "protected API requires its own login on the gateway database"
+            )
+        protected_engine = create_async_engine(
+            protected_url,
+            hide_parameters=True,
+            pool_size=4,
+            max_overflow=0,
+            pool_timeout=3,
+            connect_args={"timeout": 3, "command_timeout": 3},
+        )
+        protected = ProtectedDispatch(
+            protected_engine,
+            payloads,
+            digests,
+            config.protected_wait_seconds,
+            timedelta(seconds=config.protected_dispatch_seconds),
+        )
     runtime = Runtime(
         engine,
         redis,
@@ -121,7 +184,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "analytics": Target("REST", 8000, secret(config.analytics_secret)),
         },
     )
-    mcp = build_mcp(identity, runtime, ["localhost:*", "127.0.0.1:*", "api:*"])
+    mcp = build_mcp(
+        identity,
+        runtime,
+        ["localhost:*", "127.0.0.1:*", "api:*"],
+        protected_results_enabled=protected is not None,
+    )
+
+    protected_valid = False
 
     async def postgres_ready() -> bool:
         async with engine.connect() as connection:
@@ -130,10 +200,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "SELECT EXISTS (SELECT 1 FROM workspaces WHERE id = 'default'), "
                     "EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'), "
                     "(SELECT array_agg(version_num ORDER BY version_num) "
-                    "FROM alembic_version) IN (ARRAY['0009']::varchar[], ARRAY['0010']::varchar[], ARRAY['0011']::varchar[])"
+                    "FROM alembic_version) = ARRAY['0012']::varchar[], "
+                    "(SELECT mode FROM execution_dispatch_gate WHERE singleton)"
                 )
             )
-            return all(result.one())
+            workspace, vector, revision, mode = result.one()
+            return bool(
+                workspace
+                and vector
+                and revision
+                and mode in {"LEGACY", "PAUSED", "DURABLE"}
+                and ((protected is None and mode == "LEGACY") or protected_valid)
+            )
 
     async def redis_ready() -> bool:
         return bool(await redis.ping())
@@ -147,7 +225,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        nonlocal protected_valid
         try:
+            if protected is not None:
+                protected_valid = (
+                    await probe(protected.valid_database_identity()) == "available"
+                )
+                runtime.protected = protected if protected_valid else None
+                if not protected_valid:
+                    logger.warning("Protected database identity rejected")
             async with mcp.lifespan(mcp):
                 await embeddings.load()
                 workers = [
@@ -166,6 +252,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     await asyncio.gather(*workers, return_exceptions=True)
         finally:
             await redis.aclose()
+            runtime.protected = None
+            protected_valid = False
+            if protected_engine is not None:
+                await protected_engine.dispose()
             await engine.dispose()
             await asyncio.to_thread(telemetry.provider.shutdown)
 

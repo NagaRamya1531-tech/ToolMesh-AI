@@ -123,6 +123,15 @@ class DuplicateWorkflow:
             raise HTTPException(403, "FORBIDDEN")
         record = await self.record(principal, run_id)
         if record["refund_id"]:
+            if record[
+                "refund_transaction"
+            ] is None and await self.runtime.is_durable_execution(record["refund_id"]):
+                matches = await self.runtime.require_protected().list_approvals(
+                    principal, record["refund_id"]
+                )
+                if not matches or matches[0].get("transaction_id") is None:
+                    raise HTTPException(404, "APPROVAL_NOT_AVAILABLE")
+                record["refund_transaction"] = matches[0]["transaction_id"]
             if record["refund_transaction"] != transaction_id:
                 raise HTTPException(409, "WORKFLOW_CONFLICT")
             return record
@@ -159,7 +168,10 @@ class DuplicateWorkflow:
                 id=run_id,
                 refund=pending["approval_id"],
             )
-        return await self.record(principal, run_id)
+        linked = await self.record(principal, run_id)
+        if linked["refund_id"] == UUID(str(pending["approval_id"])):
+            linked["refund_transaction"] = transaction_id
+        return linked
 
     async def complete(self, principal: Principal, run_id: UUID):
         if principal.id != "support-agent":

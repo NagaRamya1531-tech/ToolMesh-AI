@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     otlp_traces_endpoint: str | None = None
     probe_timeout: float = Field(default=2, gt=0, le=10)
 
+    protected_database_url: SecretStr | None = None
+    protected_wrapping_keys: SecretStr | None = None
+    protected_active_key: int = Field(default=1, ge=1)
+    protected_digest_keys: SecretStr | None = None
+    protected_wait_seconds: float = Field(default=1, ge=0, le=5)
+    protected_dispatch_seconds: int = Field(default=60, ge=1, le=300)
+
     payments_secret: SecretStr | None = None
     support_secret: SecretStr | None = None
     admin_password: SecretStr | None = None

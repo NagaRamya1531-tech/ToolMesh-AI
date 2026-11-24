@@ -12,6 +12,7 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from control_plane.sources import resolve
@@ -20,6 +21,7 @@ from gateway.approvals import Approvals, event
 from gateway.discovery import Discovery, Strategy
 from gateway.grpc_adapter import call_it
 from gateway.identity import Principal
+from gateway.protected_dispatch import PROTECTED_TOOLS, ProtectedDispatch, dispatch_mode
 from gateway.redaction import redact
 from gateway.resilience import ReadDispatch
 from gateway.telemetry import Telemetry, request_id, trace_id
@@ -47,8 +49,10 @@ class Runtime:
         hr_secret: str = "",
         analytics_secret: str = "",
         telemetry: Telemetry | None = None,
+        protected: ProtectedDispatch | None = None,
     ):
         self.db = db
+        self.protected = protected
         self.redis = redis
         self.payments_secret = payments_secret
         self.support_secret = support_secret
@@ -265,7 +269,23 @@ class Runtime:
         idempotency_key: str | None = None,
         *,
         read_only: bool = False,
+        respond_async: bool = False,
     ):
+        mode = await dispatch_mode(self.db) if tool_id in PROTECTED_TOOLS else "LEGACY"
+        if mode == "PAUSED":
+            raise HTTPException(503, "DURABLE_ADMISSION_DISABLED")
+        if mode == "DURABLE":
+            if read_only:
+                raise HTTPException(403, "READ_ONLY_REQUIRED")
+            return await self.require_protected().submit(
+                principal,
+                tool_id,
+                arguments,
+                version,
+                fields,
+                idempotency_key,
+                respond_async,
+            )
         trace = uuid4()
         started = time.monotonic()
         selected = None
@@ -491,6 +511,84 @@ class Runtime:
                 ) from None
             raise
 
+    def require_protected(self) -> ProtectedDispatch:
+        if self.protected is None:
+            raise HTTPException(503, "DURABLE_ADMISSION_DISABLED")
+        return self.protected
+
+    async def is_durable_execution(self, execution_id: UUID) -> bool:
+        try:
+            async with self.db.connect() as conn:
+                [row] = await rows(
+                    conn, "SELECT is_durable_approval(:id) AS durable", id=execution_id
+                )
+        except SQLAlchemyError:
+            raise HTTPException(503, "EXECUTION_COORDINATION_UNAVAILABLE") from None
+        return bool(row["durable"])
+
+    async def audit_events(self, principal: Principal):
+        async with self.db.connect() as conn:
+            legacy = await rows(
+                conn,
+                """
+                SELECT id,actor,action,resource_id,created_at FROM audit_events
+                WHERE NOT public.is_durable_approval(resource_id)
+                  AND NOT starts_with(action,'DURABLE_')
+                ORDER BY created_at DESC,id DESC LIMIT 100
+            """,
+            )
+        if self.protected is None:
+            return legacy
+        durable = await self.protected.audit_events(principal)
+        return sorted(
+            [*legacy, *durable],
+            key=lambda item: (item["created_at"], item["id"]),
+            reverse=True,
+        )[:100]
+
+    async def list_approvals(self, principal: Principal):
+        legacy = await self.approvals.list(principal)
+        if self.protected is None or await dispatch_mode(self.db) == "LEGACY":
+            return legacy
+        protected = await self.protected.list_approvals(principal)
+        return sorted(
+            [*legacy, *protected], key=lambda item: item["requested_at"], reverse=True
+        )[:100]
+
+    async def decide_approval(
+        self, principal, execution_id, approve, reason, respond_async=False
+    ):
+        mode = await dispatch_mode(self.db)
+        if mode == "PAUSED":
+            raise HTTPException(503, "DURABLE_ADMISSION_DISABLED")
+        if mode == "DURABLE":
+            protected = self.require_protected()
+            return await protected.decide(
+                principal, execution_id, approve, reason, respond_async
+            )
+        if await self.is_durable_execution(execution_id):
+            raise HTTPException(404, "APPROVAL_NOT_AVAILABLE")
+        if approve and principal.can_approve:
+            await self.quota(principal, "approve_refund")
+        return await self.approvals.decide(principal, execution_id, approve, reason)
+
+    async def execution_result(self, principal, execution_id, fields):
+        if await self.is_durable_execution(execution_id):
+            if self.protected is None:
+                raise HTTPException(404, "EXECUTION_NOT_AVAILABLE")
+            return await self.protected.result(principal, execution_id, fields)
+        values = await self.executions(principal, execution_id)
+        if not values:
+            raise HTTPException(404, "EXECUTION_NOT_AVAILABLE")
+        [item] = values
+        return {
+            "id": str(execution_id),
+            "status": item["status"],
+            "error_code": item["error_code"],
+            "result": None,
+            "result_availability": "LEGACY_UNAVAILABLE",
+        }
+
     async def execution_events(self, principal: Principal, trace: UUID):
         async with self.db.connect() as conn:
             return await rows(
@@ -514,13 +612,13 @@ class Runtime:
         status: str | None = None,
     ):
         async with self.db.connect() as conn:
-            return await rows(
+            legacy = await rows(
                 conn,
                 """
                 SELECT id, principal, tool_id, version, status, error_code, started_at, finished_at,
                        request_id, otel_trace_id
                 FROM executions
-                WHERE (principal=:principal OR :admin)
+                WHERE NOT is_durable_approval(id) AND (principal=:principal OR :admin)
                   AND (CAST(:trace AS uuid) IS NULL OR id=CAST(:trace AS uuid))
                   AND (CAST(:hours AS integer) IS NULL OR started_at>=now()-make_interval(hours=>:hours))
                   AND (CAST(:status AS text) IS NULL OR status=:status)
@@ -532,6 +630,16 @@ class Runtime:
                 hours=hours,
                 status=status,
             )
+
+        if self.protected is None:
+            return legacy
+        durable = await self.protected.execution_metadata(
+            principal, trace, hours, status
+        )
+        return sorted(
+            [*legacy, *durable],
+            key=lambda item: (-item["started_at"].timestamp(), item["id"]),
+        )[:100]
 
 
 class BoundedStream(httpx.AsyncByteStream):

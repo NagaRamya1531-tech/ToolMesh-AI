@@ -133,7 +133,7 @@ class AgentRuns:
             raise HTTPException(409, "SCENARIO_NOT_WAITING")
         executions = await self.runtime.executions(principal, found["approval_id"])
         status = executions[0]["status"] if executions else None
-        if status not in {"SUCCEEDED", "REJECTED", "EXPIRED", "FAILED"}:
+        if status not in {"SUCCEEDED", "REJECTED", "EXPIRED", "FAILED", "DENIED"}:
             raise HTTPException(409, "APPROVAL_NOT_TERMINAL")
         async with self.db.begin() as conn:
             await execute(
@@ -243,7 +243,10 @@ class AgentRuns:
                     "summary": summary,
                 },
             ]
-            if outcome["status"] == "PENDING_APPROVAL":
+            if outcome["status"] == "PENDING_APPROVAL" or (
+                outcome.get("approval_id")
+                and outcome["status"] in {"RUNNING", "UNKNOWN"}
+            ):
                 status = "WAITING_FOR_APPROVAL"
             elif outcome["status"] != "SUCCEEDED":
                 status = "STOPPED"

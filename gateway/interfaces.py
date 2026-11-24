@@ -2,11 +2,20 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Response,
+)
+from fastapi import (
+    Query as QueryParam,
+)
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_serializer
 
 from control_plane.catalog import Catalog
 from control_plane.crawler import Crawler
@@ -133,6 +142,32 @@ class InvocationResult(BaseModel):
     approval_id: UUID | None = None
     retry_after_seconds: int | None = None
 
+    phase: str | None = None
+    approval_status: str | None = None
+    result_availability: str | None = None
+    next_check_at: datetime | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler):
+        result = handler(self)
+        for key in ("phase", "approval_status", "result_availability", "next_check_at"):
+            if result.get(key) is None:
+                result.pop(key, None)
+        return result
+
+
+def prefers_async(prefer: str) -> bool:
+    return any(value.strip().lower() == "respond-async" for value in prefer.split(","))
+
+
+def invocation_headers(response: Response, result: dict, asynchronous: bool) -> None:
+    if result.get("retry_after_seconds"):
+        response.headers["Retry-After"] = str(result["retry_after_seconds"])
+    if asynchronous and result.get("phase") and result["status"] == "RUNNING":
+        response.status_code = 202
+        response.headers["Preference-Applied"] = "respond-async"
+        response.headers["Location"] = f"/api/v1/executions/{result['id']}"
+
 
 class ExecutionRecord(BaseModel):
     id: UUID
@@ -145,6 +180,16 @@ class ExecutionRecord(BaseModel):
     finished_at: datetime | None
     request_id: str | None
     otel_trace_id: str | None
+    phase: str | None = None
+    approval_status: str | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler):
+        result = handler(self)
+        for key in ("phase", "approval_status"):
+            if result.get(key) is None:
+                result.pop(key, None)
+        return result
 
 
 class ExecutionEvent(BaseModel):
@@ -231,8 +276,12 @@ def build_api(
 
     @router.post("/executions", response_model=InvocationResult)
     async def invoke(
-        body: Invocation, response: Response, principal: Principal = Depends(caller)
+        body: Invocation,
+        response: Response,
+        principal: Principal = Depends(caller),
+        prefer: Annotated[str, Header()] = "",
     ):
+        asynchronous = prefers_async(prefer)
         result = await runtime.invoke(
             principal,
             body.tool_id,
@@ -240,9 +289,9 @@ def build_api(
             body.version,
             body.fields,
             body.idempotency_key,
+            respond_async=asynchronous,
         )
-        if result.get("retry_after_seconds"):
-            response.headers["Retry-After"] = str(result["retry_after_seconds"])
+        invocation_headers(response, result, asynchronous)
         return result
 
     @router.get("/executions", response_model=list[ExecutionRecord])
@@ -260,6 +309,14 @@ def build_api(
             raise HTTPException(404, "EXECUTION_NOT_AVAILABLE")
         return values[0]
 
+    @router.get("/executions/{trace_id}/result", response_model=InvocationResult)
+    async def execution_result(
+        trace_id: UUID,
+        principal: Principal = Depends(caller),
+        fields: Annotated[Projection | None, QueryParam()] = None,
+    ):
+        return await runtime.execution_result(principal, trace_id, fields)
+
     @router.get("/executions/{trace_id}/events", response_model=list[ExecutionEvent])
     async def execution_events(trace_id: UUID, principal: Principal = Depends(caller)):
         await execution(trace_id, principal)
@@ -267,30 +324,33 @@ def build_api(
 
     @router.get("/approvals")
     async def approvals(principal: Principal = Depends(caller)):
-        return await runtime.approvals.list(principal)
+        return await runtime.list_approvals(principal)
 
     @router.post("/approvals/{approval_id}/{decision}", response_model=InvocationResult)
     async def decide(
         approval_id: UUID,
         decision: Literal["approve", "reject"],
         body: Decision,
+        response: Response,
         principal: Principal = Depends(caller),
+        prefer: Annotated[str, Header()] = "",
     ):
-        if decision == "approve" and principal.can_approve:
-            await runtime.quota(principal, "approve_refund")
-        return await runtime.approvals.decide(
-            principal, approval_id, decision == "approve", body.reason
+        asynchronous = prefers_async(prefer)
+        result = await runtime.decide_approval(
+            principal,
+            approval_id,
+            decision == "approve",
+            body.reason,
+            asynchronous,
         )
+        invocation_headers(response, result, asynchronous)
+        return result
 
     @router.get("/audit-events")
     async def audit(principal: Principal = Depends(caller)):
         if not principal.can_publish and not principal.can_approve:
             raise HTTPException(403, "FORBIDDEN")
-        async with runtime.db.connect() as conn:
-            return await rows(
-                conn,
-                "SELECT id,actor,action,resource_id,created_at FROM audit_events ORDER BY created_at DESC,id DESC LIMIT 100",
-            )
+        return await runtime.audit_events(principal)
 
     @router.get("/overview")
     async def overview(
@@ -416,7 +476,13 @@ def build_api(
     return router
 
 
-def build_mcp(identity: Identity, runtime: Runtime, hosts: list[str]):
+def build_mcp(
+    identity: Identity,
+    runtime: Runtime,
+    hosts: list[str],
+    *,
+    protected_results_enabled: bool = False,
+):
     server = FastMCP("ToolMesh AI", auth=identity, mask_error_details=True)
 
     async def caller() -> Principal:
@@ -466,11 +532,33 @@ def build_mcp(identity: Identity, runtime: Runtime, hosts: list[str]):
         version: Version | None = None,
         fields: Projection | None = None,
         idempotency_key: Key | None = None,
+        respond_async: bool = False,
     ) -> dict:
         """Invoke a published operation and return its persisted execution ID."""
-        return await runtime.invoke(
-            await caller(), tool_id, arguments, version, fields, idempotency_key
-        )
+        try:
+            return await runtime.invoke(
+                await caller(),
+                tool_id,
+                arguments,
+                version,
+                fields,
+                idempotency_key,
+                respond_async=respond_async,
+            )
+        except HTTPException as exc:
+            raise ToolError(str(exc.detail)) from None
+
+    async def get_execution_result(
+        execution_id: UUID, fields: Projection | None = None
+    ) -> dict:
+        """Retrieve authorized execution results without dispatching."""
+        try:
+            return await runtime.execution_result(await caller(), execution_id, fields)
+        except HTTPException as exc:
+            raise ToolError(str(exc.detail)) from None
+
+    if protected_results_enabled:
+        server.tool(get_execution_result)
 
     return server.http_app(
         path="/",

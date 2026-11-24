@@ -697,7 +697,12 @@ def test_committed_approval_retry_after_ownership_transition(upgraded, phase):
                             ident, APPROVER, "APPROVED", REASON
                         )
                         assert result == replace(
-                            original, execution_state=phase, replayed=True
+                            original,
+                            execution_state=phase,
+                            replayed=True,
+                            error_code="DISPATCH_DEADLINE_EXCEEDED"
+                            if phase is ExecutionState.FAILED
+                            else None,
                         )
                     for actor, reason in (
                         (other, REASON),
