@@ -44,7 +44,7 @@ from gateway.execution_contracts import ExecutionState
 from gateway.execution_store import CommandStoreError
 from gateway.execution_worker_store import synthetic_evidence_bytes
 from gateway.sandbox_refund_reconciliation import RestartReconciler
-from gateway.sandbox_refund_store import SandboxRestartStore
+from gateway.sandbox_refund_store import SandboxRefundStore, SandboxRestartStore
 from shared.database import execute, rows
 
 pytestmark = pytest.mark.skipif(
@@ -680,35 +680,84 @@ def test_absent_restart_lookup_can_resolve_on_later_committed_evidence(
     asyncio.run(check())
 
 
-def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
+@pytest.mark.parametrize("refund_queue", [False, True], ids=["restart", "refund"])
+def test_invalid_send_markers_do_not_block_later_work(
+    upgraded, monkeypatch, refund_queue
+):
     async def check():
         async with parked_restart(upgraded, monkeypatch) as fixture:
-            db, approvals, ownership, adapter, flow, oldest, _, _, _, _, keys = fixture
+            (
+                db,
+                approvals,
+                ownership,
+                restart,
+                restart_flow,
+                restart_sender,
+                restart_send,
+                _,
+                _,
+                refund,
+                keys,
+            ) = fixture
             commands = services(db, keys)[0]
-            senders = [oldest]
-            for _ in range(2):
-                command = await commands.submit(
-                    replace(
-                        REQUEST,
-                        idempotency_key=str(uuid4()),
-                        requester="it-agent",
-                        tool_id=TOOL,
-                        arguments={
-                            "customer_id": "C-102",
-                            "service_id": "synthetic-search-api",
-                        },
+            send_id = None
+            if refund_queue:
+                request = REQUEST
+                adapter = refund
+                flow = RefundFlow(approvals, ownership, refund)
+                prefix = "SYNTHETIC_SEND_MARKED:payments.issue_refund:refund-ledger.v2:"
+                senders = []
+                async with db.begin() as conn:
+                    await execute(
+                        conn,
+                        "INSERT INTO synthetic_refund.captures VALUES (:workspace,:customer,:transaction,:currency,500)",
+                        workspace=REQUEST.workspace_id,
+                        customer=REQUEST.arguments["customer_id"],
+                        transaction=REQUEST.arguments["transaction_id"],
+                        currency=REQUEST.arguments["currency"],
                     )
+            else:
+                request = replace(
+                    REQUEST,
+                    requester="it-agent",
+                    tool_id=TOOL,
+                    arguments={
+                        "customer_id": "C-102",
+                        "service_id": "synthetic-search-api",
+                    },
+                )
+                adapter = restart
+                flow = restart_flow
+                prefix = (
+                    "SYNTHETIC_SEND_MARKED:it.restart_service:it-restart-ledger.v1:"
+                )
+                senders = [restart_sender]
+            for _ in range(3 - len(senders)):
+                command = await commands.submit(
+                    replace(request, idempotency_key=str(uuid4()))
                 )
                 await approvals.decide(
-                    command.execution_id,
-                    "refund-approver",
-                    "APPROVED",
-                    "fixture restart",
+                    command.execution_id, "refund-approver", "APPROVED", "fixture SEND"
                 )
                 sender, valid_send, _, _ = await parked_send(
-                    db, ownership, adapter, flow, command.execution_id, monkeypatch
+                    db,
+                    ownership,
+                    adapter,
+                    flow,
+                    command.execution_id,
+                    monkeypatch,
+                    restart=not refund_queue,
                 )
                 senders.append(sender)
+
+            if refund_queue:
+                ready = await commands.submit(
+                    replace(REQUEST, idempotency_key=str(uuid4()))
+                )
+                send_id = ready.execution_id
+                await approvals.decide(
+                    send_id, "refund-approver", "APPROVED", "fixture SEND"
+                )
 
             malformed, duplicated, valid = [sender.execution_id for sender in senders]
             async with db.begin() as conn:
@@ -726,10 +775,9 @@ def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
                     valid=valid,
                 )
 
-            async with worker_login(db, refund=False, restart=True) as engine:
-                store = SandboxRestartStore(
-                    engine, approvals, timedelta(seconds=20), keys[-1]
-                )
+            async with worker_login(db, refund=refund_queue, restart=True) as engine:
+                store_type = SandboxRefundStore if refund_queue else SandboxRestartStore
+                store = store_type(engine, approvals, timedelta(seconds=20), keys[-1])
                 assert await asyncio.gather(
                     *(store.discover_due_synthetic_refunds(limit=2) for _ in range(2))
                 ) == [[malformed, duplicated], [malformed, duplicated]]
@@ -745,10 +793,11 @@ def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
                         conn,
                         """
                         UPDATE public.audit_events
-                        SET action='SYNTHETIC_SEND_MARKED:it.restart_service:it-restart-ledger.v1:malformed'
+                        SET action=:prefix || 'malformed'
                         WHERE resource_id=:id AND starts_with(action,'SYNTHETIC_SEND_MARKED:')
                     """,
                         id=malformed,
+                        prefix=prefix,
                     )
                     await execute(
                         conn,
@@ -793,7 +842,13 @@ def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
                 workers = await asyncio.gather(
                     *(
                         start_worker(
-                            engine, restart_verification_keys=key_setting(keys)
+                            engine,
+                            restart_verification_keys=key_setting(keys),
+                            **(
+                                {"refund_verification_keys": key_setting(keys)}
+                                if refund_queue
+                                else {}
+                            ),
                         )
                         for _ in range(2)
                     )
@@ -806,6 +861,40 @@ def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
                     await check_terminal(
                         db, senders[-1], valid_send, ExecutionState.SUCCEEDED
                     )
+                    if send_id is not None:
+                        async with asyncio.timeout(10):
+                            while True:
+                                held, _ = await snapshot(db, send_id)
+                                if held["state"] == "CLAIMED":
+                                    break
+                                await asyncio.sleep(0.05)
+                            while True:
+                                renewed, [attempt] = await snapshot(db, send_id)
+                                restart_state, _ = await snapshot(
+                                    db, restart_sender.execution_id
+                                )
+                                assert renewed["lease_owner"] == held["lease_owner"]
+                                assert renewed["generation"] == held["generation"]
+                                assert (
+                                    attempt["kind"] == "SEND"
+                                    and attempt["send_marked_at"] is None
+                                )
+                                if (
+                                    restart_state["state"] == "SUCCEEDED"
+                                    and renewed["lease_expires_at"]
+                                    > held["lease_expires_at"]
+                                ):
+                                    break
+                                assert all(proc.returncode is None for proc in workers)
+                                await asyncio.sleep(0.05)
+                        await check_terminal(
+                            db, restart_sender, restart_send, ExecutionState.SUCCEEDED
+                        )
+                        assert await effects(db, restart_sender.execution_id) == (
+                            1,
+                            1,
+                            8,
+                        )
                     for _ in range(3):
                         assert await store.discover_due_synthetic_refunds(limit=1) == []
                     for candidate, original in zip(
@@ -815,24 +904,28 @@ def test_invalid_restart_markers_do_not_block_later_work(upgraded, monkeypatch):
                         assert (state, [attempt]) == original
                         assert state["status"] == state["state"] == "UNKNOWN"
                         assert state["receipts"] == 0 and attempt["kind"] == "SEND"
-                    async with db.connect() as conn:
-                        versions = await rows(
-                            conn,
-                            """
-                            SELECT operation_id,boot_generation FROM synthetic_restart.outcomes
-                            WHERE operation_id IN (:malformed,:duplicated,:valid) ORDER BY boot_generation
-                        """,
-                            malformed=malformed,
-                            duplicated=duplicated,
-                            valid=valid,
-                        )
-                    assert versions == [
-                        {"operation_id": malformed, "boot_generation": 8},
-                        {"operation_id": duplicated, "boot_generation": 9},
-                        {"operation_id": valid, "boot_generation": 10},
-                    ]
+                    if not refund_queue:
+                        async with db.connect() as conn:
+                            versions = await rows(
+                                conn,
+                                """
+                                SELECT operation_id,boot_generation FROM synthetic_restart.outcomes
+                                WHERE operation_id IN (:malformed,:duplicated,:valid) ORDER BY boot_generation
+                                """,
+                                malformed=malformed,
+                                duplicated=duplicated,
+                                valid=valid,
+                            )
+                        assert versions == [
+                            {"operation_id": malformed, "boot_generation": 8},
+                            {"operation_id": duplicated, "boot_generation": 9},
+                            {"operation_id": valid, "boot_generation": 10},
+                        ]
                     for candidate in (malformed, duplicated, valid):
-                        assert await effects(db, candidate) == (1, 1, 10)
+                        if refund_queue:
+                            assert await effect(db, candidate) == (1, 123, 131)
+                        else:
+                            assert await effects(db, candidate) == (1, 1, 10)
                 finally:
                     assert await asyncio.gather(
                         *(stop_worker(proc) for proc in workers)

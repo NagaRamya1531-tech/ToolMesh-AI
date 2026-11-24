@@ -185,14 +185,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
             SELECT 1 FROM public.execution_attempts a
             WHERE a.execution_id=c.execution_id AND a.kind='SEND'
               AND a.send_marked_at IS NOT NULL AND a.outcome='UNKNOWN'
-              AND CASE WHEN requested_tool='it.restart_service' THEN
-                c.generation>=a.generation AND m914_refund.bound_marker(
-                    c.execution_id,a.worker_id,m914_refund.marker_prefix(requested_tool)
-                ) IS NOT NULL
-              ELSE EXISTS (
-                SELECT 1 FROM public.audit_events marker WHERE marker.resource_id=c.execution_id
-                  AND starts_with(marker.action,m914_refund.marker_prefix(requested_tool))
-              ) END
+              AND c.generation>=a.generation
+              AND m914_refund.bound_marker(
+                  c.execution_id,a.worker_id,m914_refund.marker_prefix(requested_tool)
+              ) IS NOT NULL
           )
     )
     SELECT d.execution_id FROM (

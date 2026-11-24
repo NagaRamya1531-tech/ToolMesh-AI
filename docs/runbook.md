@@ -84,7 +84,7 @@ TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -
 
 On disposable revision `0011`, initialize the current synthetic restart ledger and install the [restart privileges](../tests/fixtures/m914_restart_verifier_privileges.sql) after the shared verifier fixture. Reprovision older disposable restart fixtures so the ledger records both boot generations and the original SEND owner. Start the worker with `TOOLMESH_SANDBOX_WORKER_RESTART_VERIFICATION_KEYS` in the same four-key format as the refund setting. Grant the worker login `m914_worker_access` and `m914_restart_verifier`, plus `m914_refund_verifier` when refund verification is configured. Use the slice's explicit parking call for expired marked restart SENDs.
 
-Restart discovery skips executions with malformed or ambiguous SEND markers. They remain `UNKNOWN` and require investigation of the original SEND evidence. Eligibility is checked again inside the fenced claim.
+Refund and restart discovery skip executions with malformed or ambiguous SEND markers. They remain `UNKNOWN` and require investigation of the original SEND evidence. Eligibility is checked again inside the fenced claim.
 
 Grant a separate operator login `m914_restart_operator` for restart attention and resume. Pass `'it.restart_service'` as the last argument to the shared SQL entry points.
 
