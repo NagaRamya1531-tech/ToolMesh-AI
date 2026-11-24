@@ -1,6 +1,8 @@
 -- Install atomically as the trusted provisioner of a disposable 0011 database.
 CREATE ROLE m914_refund_verifier NOLOGIN;
 CREATE ROLE m914_refund_operator NOLOGIN;
+CREATE ROLE m914_restart_verifier NOLOGIN;
+CREATE ROLE m914_restart_operator NOLOGIN;
 CREATE ROLE m914_refund_function_owner NOLOGIN;
 CREATE SCHEMA m914_refund AUTHORIZATION m914_refund_function_owner;
 REVOKE ALL ON SCHEMA m914_refund FROM PUBLIC;
@@ -43,7 +45,7 @@ GRANT INSERT ON public.audit_events TO m914_refund_function_owner;
 CREATE FUNCTION m914_refund.protect_operator_audit() RETURNS trigger
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
-    reserved constant text := '^SYNTHETIC_VERIFY_(ATTENTION|RESUMED)';
+    reserved constant text := '^SYNTHETIC_(VERIFY_(ATTENTION|RESUMED)|RESTART_VERIFY_)';
 BEGIN
     IF TG_OP='TRUNCATE' THEN
         IF EXISTS (SELECT 1 FROM public.audit_events WHERE action ~ reserved) THEN
@@ -121,26 +123,60 @@ CREATE FUNCTION m914_refund.backoff_ms(
     FROM (SELECT least(cap_ms,initial_ms*(1::bigint << least(greatest(used-1,0),29)::integer)) AS delay) d
 $$;
 
-CREATE FUNCTION m914_refund.pause(target uuid, actor_name text, cause text)
+CREATE FUNCTION m914_refund.pause(target uuid, actor_name text, audit_prefix text, cause text)
 RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
     UPDATE m914_refund.windows SET attention_reason=cause WHERE execution_id=target;
     UPDATE public.execution_commands SET lease_owner=NULL,lease_expires_at=NULL,
         next_check_at=NULL WHERE execution_id=target;
     INSERT INTO public.audit_events(actor,action,resource_id)
-        VALUES (actor_name,'SYNTHETIC_VERIFY_ATTENTION_'||cause,target);
+        VALUES (actor_name,audit_prefix||'ATTENTION_'||cause,target);
 END
+$$;
+
+-- Keep refund and restart authority distinct even though they share the
+-- same fenced transaction and retry-window tables.
+CREATE FUNCTION m914_refund.allowed(requested_tool text, is_operator boolean)
+RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT CASE requested_tool
+        WHEN 'payments.issue_refund' THEN pg_has_role(session_user,
+            CASE WHEN is_operator THEN 'm914_refund_operator' ELSE 'm914_refund_verifier' END,'USAGE')
+        WHEN 'it.restart_service' THEN pg_has_role(session_user,
+            CASE WHEN is_operator THEN 'm914_restart_operator' ELSE 'm914_restart_verifier' END,'USAGE')
+        ELSE false END
+$$;
+
+CREATE FUNCTION m914_refund.marker_prefix(requested_tool text)
+RETURNS text LANGUAGE sql IMMUTABLE STRICT SET search_path = pg_catalog, pg_temp AS $$
+    SELECT CASE requested_tool
+        WHEN 'payments.issue_refund' THEN 'SYNTHETIC_SEND_MARKED:payments.issue_refund:refund-ledger.v2:'
+        WHEN 'it.restart_service' THEN 'SYNTHETIC_SEND_MARKED:it.restart_service:it-restart-ledger.v1:'
+        END
+$$;
+
+-- Count every SEND marker, including other tool contracts. The only marker
+-- must belong to the original sender and contain a canonical binding.
+CREATE FUNCTION m914_refund.bound_marker(target uuid, sender uuid, prefix text)
+RETURNS bytea LANGUAGE sql STABLE STRICT SECURITY INVOKER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT CASE WHEN count(*)=1 THEN decode(
+        min(substr(a.action,length(prefix)+1)) FILTER (
+            WHERE a.actor=sender::text AND starts_with(a.action,prefix)
+              AND substr(a.action,length(prefix)+1) ~ '^[0-9a-f]{64}$'
+        ),'hex') END
+    FROM public.audit_events a WHERE a.resource_id=target
+      AND (a.action='SYNTHETIC_SEND_MARKED' OR starts_with(a.action,'SYNTHETIC_SEND_MARKED:'))
 $$;
 
 -- Keep scheduled work and expired leases as separate indexed ranges. Discovery
 -- is advisory. The claim rechecks state, time and the protected marker under lock.
-CREATE FUNCTION m914_refund.discover(batch integer) RETURNS TABLE (execution_id uuid)
+CREATE FUNCTION m914_refund.discover(batch integer, requested_tool text DEFAULT 'payments.issue_refund') RETURNS TABLE (execution_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     WITH eligible AS NOT MATERIALIZED (
         SELECT c.execution_id,c.next_check_at,c.lease_expires_at
         FROM public.execution_commands c JOIN public.executions e ON e.id=c.execution_id
         WHERE c.state='UNKNOWN' AND e.status='UNKNOWN'
-          AND c.tool_id='payments.issue_refund' AND e.tool_id=c.tool_id AND NOT c.verification_only
+          AND c.tool_id=requested_tool AND e.tool_id=c.tool_id AND NOT c.verification_only
+          AND m914_refund.allowed(requested_tool,false)
           AND NOT EXISTS (
             SELECT 1 FROM m914_refund.windows w WHERE w.execution_id=c.execution_id
               AND w.attention_reason IS NOT NULL
@@ -149,10 +185,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
             SELECT 1 FROM public.execution_attempts a
             WHERE a.execution_id=c.execution_id AND a.kind='SEND'
               AND a.send_marked_at IS NOT NULL AND a.outcome='UNKNOWN'
-          )
-          AND EXISTS (
-            SELECT 1 FROM public.audit_events a WHERE a.resource_id=c.execution_id
-              AND starts_with(a.action,'SYNTHETIC_SEND_MARKED:payments.issue_refund:refund-ledger.v2:')
+              AND CASE WHEN requested_tool='it.restart_service' THEN
+                c.generation>=a.generation AND m914_refund.bound_marker(
+                    c.execution_id,a.worker_id,m914_refund.marker_prefix(requested_tool)
+                ) IS NOT NULL
+              ELSE EXISTS (
+                SELECT 1 FROM public.audit_events marker WHERE marker.resource_id=c.execution_id
+                  AND starts_with(marker.action,m914_refund.marker_prefix(requested_tool))
+              ) END
           )
     )
     SELECT d.execution_id FROM (
@@ -177,7 +217,8 @@ $$;
 
 CREATE FUNCTION m914_refund.operate(
     action text, target uuid, verifier uuid, fence bigint, lease_ms integer,
-    preimage bytea, verdict text, reason text
+    preimage bytea, verdict text, reason text,
+    requested_tool text DEFAULT 'payments.issue_refund', effect_version bigint DEFAULT NULL
 ) RETURNS TABLE (
     generation bigint, expires_at timestamptz, sender_worker uuid,
     sender_generation bigint, intent_binding bytea, state text, lookup_timeout_ms integer
@@ -187,13 +228,14 @@ DECLARE
     gate text;
     cmd record;
     original record;
-    marker text;
-    marker_count integer;
-    marker_prefix constant text := 'SYNTHETIC_SEND_MARKED:payments.issue_refund:refund-ledger.v2:';
+    marker_prefix constant text := m914_refund.marker_prefix(requested_tool);
+    audit_prefix constant text := CASE WHEN requested_tool='it.restart_service'
+        THEN 'SYNTHETIC_RESTART_VERIFY_' ELSE 'SYNTHETIC_VERIFY_' END;
     current_time_value timestamptz;
     manifest jsonb;
     amount numeric;
     effect bigint;
+    restart_effect record;
     target_state text;
     evidence_bytes bytea;
     policy m914_refund.retry_policy%ROWTYPE;
@@ -216,10 +258,10 @@ BEGIN
     IF gate <> 'DURABLE' THEN
         RAISE EXCEPTION USING ERRCODE='M9143', MESSAGE='durable verification disabled';
     END IF;
+    IF NOT m914_refund.allowed(requested_tool,action='resume') THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='synthetic verification role required';
+    END IF;
     IF action='resume' THEN
-        IF NOT pg_has_role(session_user,'m914_refund_operator','USAGE') THEN
-            RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='refund operator role required';
-        END IF;
         IF fence IS NULL OR fence<1 OR reason IS NULL OR length(btrim(reason)) NOT BETWEEN 1 AND 240
           OR reason ~ '[[:cntrl:]]' THEN
             RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='expected window and nonblank reason required';
@@ -228,11 +270,11 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='invalid verification operation';
     END IF;
     PERFORM id FROM public.executions WHERE id=target AND status='UNKNOWN'
-        AND tool_id='payments.issue_refund' FOR UPDATE;
+        AND tool_id=requested_tool FOR UPDATE;
     IF NOT FOUND THEN RETURN; END IF;
-    SELECT c.generation,c.lease_owner,c.lease_expires_at,c.next_check_at INTO cmd
+    SELECT c.generation,c.lease_owner,c.lease_expires_at,c.next_check_at,c.workspace_id,c.customer_id INTO cmd
         FROM public.execution_commands c WHERE c.execution_id=target AND c.state='UNKNOWN'
-        AND c.tool_id='payments.issue_refund' AND NOT c.verification_only FOR UPDATE;
+        AND c.tool_id=requested_tool AND NOT c.verification_only FOR UPDATE;
     IF NOT FOUND THEN RETURN; END IF;
     IF action='finish' AND (NOT m914_refund.owned(target,verifier,fence)
         OR cmd.generation IS DISTINCT FROM fence OR cmd.lease_owner IS DISTINCT FROM verifier)
@@ -259,13 +301,8 @@ BEGIN
     THEN
         RAISE EXCEPTION USING ERRCODE='M9148', MESSAGE='refund operator audit guards unavailable';
     END IF;
-    SELECT count(*),min(a.action) FILTER (WHERE a.actor=original.worker_id::text)
-      INTO marker_count,marker FROM public.audit_events a WHERE a.resource_id=target
-      AND (a.action='SYNTHETIC_SEND_MARKED' OR starts_with(a.action,'SYNTHETIC_SEND_MARKED:'));
-    IF marker_count<>1 OR marker IS NULL OR NOT starts_with(marker,marker_prefix)
-        OR substr(marker,length(marker_prefix)+1) !~ '^[0-9a-f]{64}$'
-    THEN RETURN; END IF;
-    intent_binding := decode(substr(marker,length(marker_prefix)+1),'hex');
+    intent_binding := m914_refund.bound_marker(target,original.worker_id,marker_prefix);
+    IF intent_binding IS NULL THEN RETURN; END IF;
     current_time_value := clock_timestamp();
 
     IF action='claim' THEN
@@ -291,7 +328,7 @@ BEGIN
         UPDATE public.execution_commands SET next_check_at=current_time_value WHERE execution_id=target;
         INSERT INTO public.audit_events(actor,action,resource_id)
           VALUES (session_user::text,
-            format('SYNTHETIC_VERIFY_RESUMED:%s:%s:%s',fence+1,cmd.generation,btrim(reason)),target);
+            format(audit_prefix||'RESUMED:%s:%s:%s',fence+1,cmd.generation,btrim(reason)),target);
         generation := fence+1;
         RETURN NEXT;
         RETURN;
@@ -319,10 +356,10 @@ BEGIN
                 RAISE EXCEPTION USING ERRCODE='M9144', MESSAGE='invalid expired verifier';
             END IF;
             INSERT INTO public.audit_events(actor,action,resource_id)
-              VALUES (cmd.lease_owner::text,'SYNTHETIC_VERIFY_LEASE_EXPIRED',target);
+              VALUES (cmd.lease_owner::text,audit_prefix||'LEASE_EXPIRED',target);
         END IF;
         IF current_time_value>=active_window.deadline OR used>=active_window.max_attempts THEN
-            PERFORM m914_refund.pause(target,verifier::text,
+            PERFORM m914_refund.pause(target,verifier::text,audit_prefix,
               CASE WHEN current_time_value>=active_window.deadline THEN 'DEADLINE' ELSE 'ATTEMPTS' END);
             RETURN;
         END IF;
@@ -334,7 +371,7 @@ BEGIN
                 UPDATE public.execution_commands SET lease_owner=NULL,lease_expires_at=NULL,
                     next_check_at=next_due WHERE execution_id=target;
                 INSERT INTO public.audit_events(actor,action,resource_id)
-                  VALUES (verifier::text,'SYNTHETIC_VERIFY_DEFERRED_LEASE_EXPIRED',target);
+                  VALUES (verifier::text,audit_prefix||'DEFERRED_LEASE_EXPIRED',target);
                 RETURN;
             END IF;
         END IF;
@@ -353,7 +390,7 @@ BEGIN
           ON CONFLICT (execution_id) DO UPDATE
             SET generation=excluded.generation,worker_id=excluded.worker_id,login_name=excluded.login_name;
         INSERT INTO public.audit_events(actor,action,resource_id)
-          VALUES (verifier::text,'SYNTHETIC_VERIFY_CLAIMED',target);
+          VALUES (verifier::text,audit_prefix||'CLAIMED',target);
         RETURN NEXT;
         RETURN;
     END IF;
@@ -376,19 +413,41 @@ BEGIN
              IS DISTINCT FROM ARRAY[original.worker_id::text]
         THEN RAISE EXCEPTION USING ERRCODE='M9147', MESSAGE='refund binding mismatch'; END IF;
         manifest := convert_from(preimage,'UTF8')::jsonb;
-        amount := (manifest #>> '{3,amount_minor}')::numeric;
-        SELECT o.refunded_minor INTO effect FROM synthetic_refund.outcomes o
-            WHERE o.operation_id=target AND o.binding=intent_binding;
-        IF NOT FOUND OR amount IS NULL OR amount<=0
-          OR (verdict='EFFECT_COMMITTED' AND effect<>amount)
-          OR (verdict='DEFINITIVE_NO_EFFECT' AND effect<>0)
-        THEN RAISE EXCEPTION USING ERRCODE='M9147', MESSAGE='refund ledger mismatch'; END IF;
+        IF requested_tool='it.restart_service' THEN
+            SELECT o.prior_boot_generation,o.boot_generation INTO restart_effect
+                FROM synthetic_restart.outcomes o
+                WHERE o.operation_id=target AND o.binding=intent_binding
+                  AND o.workspace_id=cmd.workspace_id AND o.customer_id=cmd.customer_id
+                  AND o.service_id=manifest #>> '{3,service_id}'
+                  AND o.sender_worker=original.worker_id AND o.sender_generation=original.generation;
+            IF NOT FOUND OR manifest #>> '{3,customer_id}' IS DISTINCT FROM cmd.customer_id
+              OR effect_version IS DISTINCT FROM restart_effect.boot_generation
+              OR (verdict='EFFECT_COMMITTED' AND (
+                  restart_effect.prior_boot_generation IS NULL OR restart_effect.boot_generation IS NULL
+                  OR restart_effect.prior_boot_generation<0
+                  OR restart_effect.boot_generation-restart_effect.prior_boot_generation<>1))
+              OR (verdict='DEFINITIVE_NO_EFFECT' AND (
+                  restart_effect.prior_boot_generation IS NOT NULL OR restart_effect.boot_generation IS NOT NULL))
+            THEN RAISE EXCEPTION USING ERRCODE='M9147', MESSAGE='restart ledger mismatch'; END IF;
+            evidence_bytes := convert_to(format(
+              '["synthetic-outcome.v3","it-restart-ledger.v1",{"operation_id":"%s","owner":{"execution_id":"%s","generation":%s,"worker_id":"%s"},"result":"%s"},"%s",%s]',
+              target,target,original.generation,original.worker_id,verdict,
+              encode(intent_binding,'hex'),coalesce(effect_version::text,'null')
+            ),'UTF8');
+        ELSE
+            amount := (manifest #>> '{3,amount_minor}')::numeric;
+            SELECT o.refunded_minor INTO effect FROM synthetic_refund.outcomes o
+                WHERE o.operation_id=target AND o.binding=intent_binding;
+            IF NOT FOUND OR amount IS NULL OR amount<=0 OR effect_version IS NOT NULL
+              OR (verdict='EFFECT_COMMITTED' AND effect<>amount)
+              OR (verdict='DEFINITIVE_NO_EFFECT' AND effect<>0)
+            THEN RAISE EXCEPTION USING ERRCODE='M9147', MESSAGE='refund ledger mismatch'; END IF;
+            evidence_bytes := convert_to(format(
+              '["synthetic-outcome.v2",{"operation_id":"%s","owner":{"execution_id":"%s","generation":%s,"worker_id":"%s"},"result":"%s"},"%s"]',
+              target,target,original.generation,original.worker_id,verdict,encode(intent_binding,'hex')
+            ),'UTF8');
+        END IF;
         target_state := CASE WHEN verdict='EFFECT_COMMITTED' THEN 'SUCCEEDED' ELSE 'FAILED' END;
-        -- Same byte encoding as synthetic_evidence_bytes for refund v2.
-        evidence_bytes := convert_to(format(
-          '["synthetic-outcome.v2",{"operation_id":"%s","owner":{"execution_id":"%s","generation":%s,"worker_id":"%s"},"result":"%s"},"%s"]',
-          target,target,original.generation,original.worker_id,verdict,encode(intent_binding,'hex')
-        ),'UTF8');
     END IF;
     -- Recheck wall time after validating preimage and ledger evidence.
     current_time_value := clock_timestamp();
@@ -400,9 +459,9 @@ BEGIN
     IF NOT FOUND THEN RETURN; END IF;
     IF target_state='UNKNOWN' THEN
         INSERT INTO public.audit_events(actor,action,resource_id)
-            VALUES (verifier::text,'SYNTHETIC_VERIFY_DEFERRED_'||reason,target);
+            VALUES (verifier::text,audit_prefix||'DEFERRED_'||reason,target);
         IF used>=active_window.max_attempts THEN
-            PERFORM m914_refund.pause(target,verifier::text,'ATTEMPTS');
+            PERFORM m914_refund.pause(target,verifier::text,audit_prefix,'ATTEMPTS');
         ELSE
             next_due := least(active_window.deadline,current_time_value+
                 m914_refund.backoff_ms(target,fence,used,active_window.initial_ms,
@@ -421,21 +480,21 @@ BEGIN
             error_code=CASE WHEN target_state='FAILED' THEN 'SYNTHETIC_DEFINITIVE_NO_EFFECT' END
           WHERE id=target;
         INSERT INTO public.audit_events(actor,action,resource_id)
-          VALUES (verifier::text,'SYNTHETIC_VERIFY_'||target_state,target);
+          VALUES (verifier::text,audit_prefix||target_state,target);
     END IF;
     state := target_state;
     RETURN NEXT;
 END
 $$;
 
-CREATE FUNCTION m914_refund.intent(target uuid, verifier uuid, fence bigint) RETURNS TABLE (
+CREATE FUNCTION m914_refund.intent(target uuid, verifier uuid, fence bigint, requested_tool text DEFAULT 'payments.issue_refund') RETURNS TABLE (
     command jsonb, reservation jsonb, approval jsonb, execution jsonb, contract jsonb
 ) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     SELECT to_jsonb(c),to_jsonb(k),to_jsonb(a),to_jsonb(e),v.contract
     FROM (
         SELECT execution_id,workspace_id,requester,customer_id,tool_id,tool_version,contract_digest,
             ciphertext,wrapped_data_key,nonce,key_version
-        FROM public.execution_commands WHERE execution_id=target AND tool_id='payments.issue_refund'
+        FROM public.execution_commands WHERE execution_id=target AND tool_id=requested_tool
           AND state='UNKNOWN' AND NOT verification_only AND generation=fence
           AND lease_owner=verifier AND lease_expires_at>statement_timestamp()
     ) c
@@ -445,12 +504,12 @@ CREATE FUNCTION m914_refund.intent(target uuid, verifier uuid, fence bigint) RET
     JOIN (SELECT id,arguments,request_key,intent_hash FROM public.approvals
           WHERE id=target AND status='APPROVED') a ON a.id=c.execution_id
     JOIN (SELECT id,principal,tool_id,version FROM public.executions
-          WHERE id=target AND status='UNKNOWN' AND tool_id='payments.issue_refund') e ON e.id=c.execution_id
+          WHERE id=target AND status='UNKNOWN' AND tool_id=requested_tool) e ON e.id=c.execution_id
     JOIN public.tool_versions v ON v.tool_id=c.tool_id AND v.version=c.tool_version
-    WHERE m914_refund.owned(target,verifier,fence)
+    WHERE m914_refund.allowed(requested_tool,false) AND m914_refund.owned(target,verifier,fence)
 $$;
 
-CREATE FUNCTION m914_refund.receipt(target uuid, verifier uuid, fence bigint)
+CREATE FUNCTION m914_refund.receipt(target uuid, verifier uuid, fence bigint, requested_tool text DEFAULT 'payments.issue_refund')
 RETURNS TABLE (state text,evidence_digest bytea)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     SELECT c.state,r.evidence_digest FROM public.execution_receipts r
@@ -459,42 +518,47 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     JOIN public.execution_attempts a ON a.execution_id=r.execution_id AND a.generation=r.generation
     WHERE r.execution_id=target AND r.generation=fence AND r.evidence_source='LOOKUP'
       AND r.external_reference='synthetic:'||target AND r.outcome=c.state AND e.status=c.state
-      AND c.tool_id='payments.issue_refund' AND e.tool_id=c.tool_id AND c.generation=fence
+      AND c.tool_id=requested_tool AND e.tool_id=c.tool_id AND c.generation=fence
+      AND m914_refund.allowed(requested_tool,false)
       AND a.kind='VERIFY' AND a.worker_id=verifier AND a.outcome=r.outcome
       AND m914_refund.owned(target,verifier,fence)
 $$;
 
-CREATE FUNCTION m914_refund.attention(target uuid)
+CREATE FUNCTION m914_refund.attention(target uuid, requested_tool text DEFAULT 'payments.issue_refund')
 RETURNS TABLE(window_number bigint,attempts_used bigint,deadline timestamptz,reason text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     SELECT w.window_number,c.generation-w.base_generation,w.deadline,w.attention_reason
     FROM m914_refund.windows w JOIN public.execution_commands c USING (execution_id)
     WHERE w.execution_id=target AND w.attention_reason IS NOT NULL
-      AND c.tool_id='payments.issue_refund' AND c.state='UNKNOWN'
+      AND c.tool_id=requested_tool AND c.state='UNKNOWN'
+      AND m914_refund.allowed(requested_tool,true)
 $$;
 
-CREATE FUNCTION m914_refund.resume(target uuid, expected_window bigint, operator_reason text)
+CREATE FUNCTION m914_refund.resume(target uuid, expected_window bigint, operator_reason text, requested_tool text DEFAULT 'payments.issue_refund')
 RETURNS TABLE(window_number bigint)
 LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     SELECT r.generation FROM m914_refund.operate(
-        'resume',target,NULL,expected_window,NULL,NULL,NULL,operator_reason
+        'resume',target,NULL,expected_window,NULL,NULL,NULL,operator_reason,requested_tool
     ) r
 $$;
 
+ALTER FUNCTION m914_refund.allowed(text,boolean) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.marker_prefix(text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.bound_marker(uuid,uuid,text) OWNER TO m914_refund_function_owner;
 ALTER FUNCTION m914_refund.backoff_ms(uuid,bigint,bigint,integer,integer,integer)
     OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.pause(uuid,text,text) OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.attention(uuid) OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.resume(uuid,bigint,text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.pause(uuid,text,text,text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.attention(uuid,text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.resume(uuid,bigint,text,text) OWNER TO m914_refund_function_owner;
 ALTER FUNCTION m914_refund.owned(uuid,uuid,bigint) OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.discover(integer) OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text)
+ALTER FUNCTION m914_refund.discover(integer,text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text,text,bigint)
     OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.intent(uuid,uuid,bigint) OWNER TO m914_refund_function_owner;
-ALTER FUNCTION m914_refund.receipt(uuid,uuid,bigint) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.intent(uuid,uuid,bigint,text) OWNER TO m914_refund_function_owner;
+ALTER FUNCTION m914_refund.receipt(uuid,uuid,bigint,text) OWNER TO m914_refund_function_owner;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA m914_refund FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION m914_refund.discover(integer),
-    m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text),
-    m914_refund.intent(uuid,uuid,bigint),m914_refund.receipt(uuid,uuid,bigint) TO m914_refund_verifier;
-GRANT EXECUTE ON FUNCTION m914_refund.attention(uuid),m914_refund.resume(uuid,bigint,text)
+GRANT EXECUTE ON FUNCTION m914_refund.discover(integer,text),
+    m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text,text,bigint),
+    m914_refund.intent(uuid,uuid,bigint,text),m914_refund.receipt(uuid,uuid,bigint,text) TO m914_refund_verifier;
+GRANT EXECUTE ON FUNCTION m914_refund.attention(uuid,text),m914_refund.resume(uuid,bigint,text,text)
     TO m914_refund_operator;

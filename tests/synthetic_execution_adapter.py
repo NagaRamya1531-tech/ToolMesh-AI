@@ -31,7 +31,8 @@ class SyntheticAdapter:
                 BEGIN
                     IF TG_OP = 'TRUNCATE' THEN
                         IF EXISTS (SELECT 1 FROM public.audit_events
-                                   WHERE (action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                                   WHERE (action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED',
+                                       'SYNTHETIC_RESTART_SEND_PARKED')
                                OR starts_with(action, 'SYNTHETIC_SEND_MARKED:'))) THEN
                             RAISE EXCEPTION USING ERRCODE = '42501',
                                 MESSAGE = 'synthetic consumption evidence is protected';
@@ -39,7 +40,8 @@ class SyntheticAdapter:
                         RETURN NULL;
                     END IF;
                     IF TG_OP = 'INSERT' THEN
-                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED',
+                                       'SYNTHETIC_RESTART_SEND_PARKED')
                                OR starts_with(NEW.action, 'SYNTHETIC_SEND_MARKED:'))
                            AND current_user <> pg_get_userbyid((
                                SELECT relowner FROM pg_class WHERE oid = TG_RELID
@@ -49,13 +51,15 @@ class SyntheticAdapter:
                         END IF;
                         RETURN NEW;
                     END IF;
-                    IF (OLD.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                    IF (OLD.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED',
+                                       'SYNTHETIC_RESTART_SEND_PARKED')
                                OR starts_with(OLD.action, 'SYNTHETIC_SEND_MARKED:')) THEN
                         RAISE EXCEPTION USING ERRCODE = '42501',
                             MESSAGE = 'synthetic consumption evidence is protected';
                     END IF;
                     IF TG_OP = 'UPDATE' THEN
-                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED')
+                        IF (NEW.action IN ('SYNTHETIC_INVOCATION_CONSUMED', 'SYNTHETIC_SEND_MARKED',
+                                       'SYNTHETIC_RESTART_SEND_PARKED')
                                OR starts_with(NEW.action, 'SYNTHETIC_SEND_MARKED:')) THEN
                             RAISE EXCEPTION USING ERRCODE = '42501',
                                 MESSAGE = 'synthetic consumption evidence is protected';

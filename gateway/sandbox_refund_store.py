@@ -1,4 +1,4 @@
-"""Client for the disposable refund verifier's restricted PostgreSQL interface."""
+"""Client for the disposable synthetic verification PostgreSQL interface."""
 
 from datetime import timedelta
 from hashlib import sha256
@@ -14,8 +14,10 @@ from gateway.execution_contracts import (
     ExecutionOwner,
     ExecutionState,
     ProtectedIntentScope,
+    ProtectedTool,
     RefundDeferralReason,
     RefundVerification,
+    SyntheticEvidenceContract,
     SyntheticOutcome,
 )
 from gateway.execution_crypto import PayloadUnavailable
@@ -25,7 +27,7 @@ from shared.database import execute, rows
 
 _OPERATE = """
     SELECT * FROM m914_refund.operate(
-        :action,:id,:worker,:generation,:lease_ms,:preimage,:verdict,:reason
+        :action,:id,:worker,:generation,:lease_ms,:preimage,:verdict,:reason,:tool,:effect_version
     )
 """
 _SQL_ERRORS = {
@@ -43,6 +45,9 @@ _SQL_ERRORS = {
 
 
 class SandboxRefundStore:
+    tool_id: ProtectedTool = "payments.issue_refund"
+    evidence_contract: SyntheticEvidenceContract | None = None
+
     def __init__(
         self,
         db: AsyncEngine,
@@ -80,49 +85,68 @@ class SandboxRefundStore:
         except (SQLAlchemyError, OSError, TimeoutError):
             raise CommandStoreError("EXECUTION_OWNERSHIP_UNAVAILABLE") from None
 
-    async def validate_access(self) -> None:
+    async def validate_access(
+        self, *, tools: tuple[ProtectedTool, ...] | None = None
+    ) -> None:
         """Check the actual login, memberships, grants, and installed endpoints."""
+        enabled = tools if tools is not None else (self.tool_id,)
         try:
             records = await self._request(
                 """
                 WITH permitted(name) AS (VALUES
                     ('m914_ownership.register_worker()'),
                     ('m914_ownership.operate(text,uuid,uuid,bigint,integer)'),
-                    ('m914_refund.discover(integer)'),
-                    ('m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text)'),
-                    ('m914_refund.intent(uuid,uuid,bigint)'),
-                    ('m914_refund.receipt(uuid,uuid,bigint)')
+                    ('m914_refund.discover(integer,text)'),
+                    ('m914_refund.operate(text,uuid,uuid,bigint,integer,bytea,text,text,text,bigint)'),
+                    ('m914_refund.intent(uuid,uuid,bigint,text)'),
+                    ('m914_refund.receipt(uuid,uuid,bigint,text)')
                 )
                 SELECT current_user=session_user
-                  AND pg_has_role(current_user,'m914_refund_verifier','USAGE')
+                  AND (NOT :refund OR pg_has_role(current_user,'m914_refund_verifier','USAGE'))
+                  AND (NOT :restart OR pg_has_role(current_user,'m914_restart_verifier','USAGE'))
                   AND pg_has_role(current_user,'m914_worker_access','USAGE')
                   AND NOT has_database_privilege(current_user,current_database(),'CREATE')
                   AND NOT EXISTS (
                     SELECT 1 FROM pg_roles r WHERE pg_has_role(current_user,r.oid,'MEMBER')
                     AND (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication
                          OR r.rolbypassrls
-                         OR r.rolname NOT IN (current_user,'m914_refund_verifier','m914_worker_access'))
+                         OR (r.rolname NOT IN (current_user,'m914_worker_access')
+                             AND NOT (:refund AND r.rolname='m914_refund_verifier')
+                             AND NOT (:restart AND r.rolname='m914_restart_verifier')))
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM pg_namespace n
-                    WHERE n.nspname IN ('public','m914_ownership','m914_refund','synthetic_refund')
+                    WHERE n.nspname IN ('public','m914_ownership','m914_refund','synthetic_refund','synthetic_restart')
                       AND has_schema_privilege(current_user,n.oid,'CREATE')
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                    WHERE n.nspname IN ('public','synthetic_refund','m914_ownership','m914_refund')
+                    WHERE n.nspname IN ('public','synthetic_refund','synthetic_restart','m914_ownership','m914_refund')
                       AND c.relkind IN ('r','p','v','m','f')
                       AND (has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')
                         OR has_table_privilege(current_user,c.oid,'DELETE,TRUNCATE,TRIGGER')
                         OR (has_any_column_privilege(current_user,c.oid,'SELECT')
-                          AND (n.nspname,c.relname) NOT IN
-                            (('public','alembic_version'),('synthetic_refund','outcomes'))))
+                          AND (n.nspname,c.relname)<>('public','alembic_version')
+                          AND NOT (:refund AND (n.nspname,c.relname)=('synthetic_refund','outcomes'))
+                          AND NOT (:restart AND (n.nspname,c.relname)=('synthetic_restart','outcomes'))))
                   )
                   AND has_schema_privilege(current_user,'m914_refund','USAGE')
-                  AND has_schema_privilege(current_user,'synthetic_refund','USAGE')
-                  AND has_column_privilege(current_user,'synthetic_refund.outcomes','operation_id','SELECT')
-                  AND has_column_privilege(current_user,'synthetic_refund.outcomes','binding','SELECT')
-                  AND has_column_privilege(current_user,'synthetic_refund.outcomes','refunded_minor','SELECT')
+                  AND CASE WHEN :refund THEN
+                    has_schema_privilege(current_user,'synthetic_refund','USAGE')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM unnest(ARRAY['operation_id','binding','refunded_minor']) AS cols(col)
+                        WHERE has_column_privilege(current_user,to_regclass('synthetic_refund.outcomes'),
+                            cols.col,'SELECT') IS DISTINCT FROM true
+                    ) ELSE true END
+                  AND CASE WHEN :restart THEN
+                    has_schema_privilege(current_user,'synthetic_restart','USAGE')
+                    AND NOT EXISTS (
+                        SELECT 1 FROM unnest(ARRAY['operation_id','binding','workspace_id',
+                            'customer_id','service_id','sender_worker','sender_generation',
+                            'prior_boot_generation','boot_generation']) AS cols(col)
+                        WHERE has_column_privilege(current_user,to_regclass('synthetic_restart.outcomes'),
+                            cols.col,'SELECT') IS DISTINCT FROM true
+                    ) ELSE true END
                   AND has_function_privilege(current_user,'m914_ownership.register_worker()','EXECUTE')
                   AND has_function_privilege(current_user,'m914_ownership.operate(text,uuid,uuid,bigint,integer)','EXECUTE')
                   AND NOT EXISTS (
@@ -138,7 +162,7 @@ class SandboxRefundStore:
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-                    WHERE n.nspname IN ('public','synthetic_refund','m914_ownership','m914_refund')
+                    WHERE n.nspname IN ('public','synthetic_refund','synthetic_restart','m914_ownership','m914_refund')
                       AND p.prosecdef AND has_function_privilege(current_user,p.oid,'EXECUTE')
                       AND NOT EXISTS (
                         SELECT 1 FROM permitted WHERE p.oid=to_regprocedure(name)
@@ -146,6 +170,8 @@ class SandboxRefundStore:
                   ) AS allowed
                 """,
                 read_only=True,
+                refund="payments.issue_refund" in enabled,
+                restart="it.restart_service" in enabled,
             )
         except CommandStoreError:
             raise CommandStoreError("WORKER_VERIFIER_ACCESS_REJECTED") from None
@@ -157,9 +183,10 @@ class SandboxRefundStore:
             raise ValueError("refund discovery limit must be between 1 and 8")
         try:
             candidates = await self._request(
-                "SELECT execution_id FROM m914_refund.discover(:limit)",
+                "SELECT execution_id FROM m914_refund.discover(:limit,:tool)",
                 read_only=True,
                 limit=limit,
+                tool=self.tool_id,
             )
         except CommandStoreError as error:
             if str(error) != "EXECUTION_OWNERSHIP_UNAVAILABLE":
@@ -184,6 +211,8 @@ class SandboxRefundStore:
             preimage=None,
             verdict=None,
             reason=None,
+            tool=self.tool_id,
+            effect_version=None,
         )
         if not records:
             return None
@@ -212,8 +241,9 @@ class SandboxRefundStore:
     ) -> tuple[ProtectedIntentScope, dict, bytes]:
         try:
             records = await self._request(
-                "SELECT * FROM m914_refund.intent(:execution_id,:worker_id,:generation)",
+                "SELECT * FROM m914_refund.intent(:execution_id,:worker_id,:generation,:tool)",
                 read_only=True,
+                tool=self.tool_id,
                 **claim.lease.owner.model_dump(),
             )
         except CommandStoreError as error:
@@ -255,7 +285,7 @@ class SandboxRefundStore:
             evidence.owner != claim.sender
             or evidence.operation_id != claim.sender.execution_id
             or evidence.intent_binding != claim.intent_binding
-            or evidence.evidence_contract is not None
+            or evidence.evidence_contract != self.evidence_contract
         ):
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         content = synthetic_evidence_bytes(evidence)
@@ -286,6 +316,8 @@ class SandboxRefundStore:
             preimage=binding_preimage,
             verdict=evidence.result if evidence is not None else None,
             reason=deferral_reason,
+            tool=self.tool_id,
+            effect_version=evidence.effect_version if evidence is not None else None,
         )
         return ExecutionState(records[0]["state"]) if records else None
 
@@ -296,10 +328,18 @@ class SandboxRefundStore:
     ) -> ExecutionState | None:
         expected = self._evidence_digest(claim, evidence)
         records = await self._request(
-            "SELECT * FROM m914_refund.receipt(:execution_id,:worker_id,:generation)",
+            "SELECT * FROM m914_refund.receipt(:execution_id,:worker_id,:generation,:tool)",
             read_only=True,
+            tool=self.tool_id,
             **claim.lease.owner.model_dump(),
         )
         if records and compare_digest(records[0]["evidence_digest"], expected):
             return ExecutionState(records[0]["state"])
         return None
+
+
+class SandboxRestartStore(SandboxRefundStore):
+    """Selects the restart-specific SQL authority and ledger contract."""
+
+    tool_id = "it.restart_service"
+    evidence_contract = "it-restart-ledger.v1"

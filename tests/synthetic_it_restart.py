@@ -1,59 +1,19 @@
 """Disposable PostgreSQL simulator and orchestration entry point for IT restarts."""
 
-from dataclasses import dataclass
-from hashlib import sha256
-from hmac import compare_digest, digest
-from typing import Final
-
-from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncEngine
 from synthetic_lookup_flow import SyntheticLookupFlow
 
 from gateway.execution_approval import ExecutionApprovals
-from gateway.execution_contracts import (
-    ExecutionOwner,
-    ProtectedIntentScope,
-    SyntheticOutcome,
-)
-from gateway.execution_crypto import canonical_json
+from gateway.execution_contracts import SyntheticOutcome
 from gateway.execution_store import CommandStoreError, lock_durable_coordination
-from gateway.execution_worker_store import (
-    ExecutionWorkerStore,
-    synthetic_evidence_bytes,
-)
+from gateway.execution_worker_store import ExecutionWorkerStore
+from gateway.sandbox_restart_evidence import CONTRACT as CONTRACT
+from gateway.sandbox_restart_evidence import TOOL as TOOL
+from gateway.sandbox_restart_evidence import RestartIntent as RestartIntent
+from gateway.sandbox_restart_evidence import RestartRequest as RestartRequest
+from gateway.sandbox_restart_evidence import read_restart_evidence
+from gateway.sandbox_restart_evidence import restart_intent as restart_intent
 from shared.database import execute, rows
-
-TOOL: Final = "it.restart_service"
-CONTRACT: Final = "it-restart-ledger.v1"
-
-
-class RestartRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    customer_id: str
-    service_id: str
-
-
-@dataclass(frozen=True)
-class RestartIntent:
-    owner: ExecutionOwner
-    scope: ProtectedIntentScope
-    request: RestartRequest
-    sealed_digest: bytes
-
-    @property
-    def binding(self) -> bytes:
-        return sha256(
-            canonical_json(
-                [
-                    CONTRACT,
-                    self.owner.model_dump(mode="json"),
-                    self.scope.model_dump(mode="json"),
-                    self.request.model_dump(mode="json"),
-                    self.sealed_digest.hex(),
-                ]
-            )
-        ).digest()
 
 
 class RestartLedger:
@@ -85,7 +45,12 @@ class RestartLedger:
                 CREATE TABLE synthetic_restart.outcomes (
                     operation_id uuid PRIMARY KEY,
                     binding bytea NOT NULL CHECK (octet_length(binding)=32),
-                    boot_generation bigint CHECK (boot_generation > 0)
+                    workspace_id text NOT NULL, customer_id text NOT NULL, service_id text NOT NULL,
+                    sender_worker uuid NOT NULL, sender_generation bigint NOT NULL CHECK (sender_generation>0),
+                    prior_boot_generation bigint CHECK (prior_boot_generation>=0),
+                    boot_generation bigint CHECK (boot_generation>0),
+                    CHECK ((prior_boot_generation IS NULL)=(boot_generation IS NULL)),
+                    CHECK (prior_boot_generation IS NULL OR boot_generation-prior_boot_generation=1)
                 )
                 """,
             )
@@ -171,11 +136,18 @@ class RestartLedger:
             reserved = await rows(
                 conn,
                 """
-                INSERT INTO synthetic_restart.outcomes (operation_id,binding) VALUES (:id,:binding)
+                INSERT INTO synthetic_restart.outcomes
+                    (operation_id,binding,workspace_id,customer_id,service_id,sender_worker,sender_generation)
+                VALUES (:id,:binding,:workspace,:customer,:service,:worker,:generation)
                 ON CONFLICT (operation_id) DO NOTHING RETURNING operation_id
                 """,
                 id=operation_id,
                 binding=intent.binding,
+                workspace=intent.scope.workspace_id,
+                customer=intent.scope.customer_id,
+                service=intent.request.service_id,
+                worker=intent.owner.worker_id,
+                generation=intent.owner.generation,
             )
             if not reserved:
                 return
@@ -186,7 +158,7 @@ class RestartLedger:
                 SET boot_generation=boot_generation+1
                 WHERE workspace_id=:workspace AND customer_id=:customer AND service_id=:service
                   AND restart_allowed
-                RETURNING boot_generation
+                RETURNING boot_generation,boot_generation-1 AS prior_boot_generation
                 """,
                 workspace=intent.scope.workspace_id,
                 customer=intent.scope.customer_id,
@@ -195,49 +167,16 @@ class RestartLedger:
             if restarted:
                 await execute(
                     conn,
-                    "UPDATE synthetic_restart.outcomes SET boot_generation=:boot_generation WHERE operation_id=:id",
+                    """
+                    UPDATE synthetic_restart.outcomes SET boot_generation=:boot_generation,
+                        prior_boot_generation=:prior_boot_generation WHERE operation_id=:id
+                    """,
                     id=operation_id,
-                    boot_generation=restarted[0]["boot_generation"],
+                    **restarted[0],
                 )
 
     async def evidence(self, intent: RestartIntent) -> SyntheticOutcome | None:
-        operation_id = intent.owner.execution_id
-        async with self._db.connect() as conn:
-            observed = await rows(
-                conn,
-                "SELECT binding, boot_generation FROM synthetic_restart.outcomes WHERE operation_id=:id",
-                id=operation_id,
-            )
-        if not observed or not compare_digest(observed[0]["binding"], intent.binding):
-            return None
-        generation = observed[0]["boot_generation"]
-        outcome = SyntheticOutcome(
-            owner=intent.owner,
-            operation_id=operation_id,
-            result="DEFINITIVE_NO_EFFECT" if generation is None else "EFFECT_COMMITTED",
-            intent_binding=intent.binding,
-            evidence_contract=CONTRACT,
-            effect_version=generation,
-            attestation=bytes(32),
-        )
-        return outcome.model_copy(
-            update={
-                "attestation": digest(
-                    self._key, synthetic_evidence_bytes(outcome), "sha256"
-                )
-            }
-        )
-
-
-def restart_intent(
-    owner: ExecutionOwner,
-    scope: ProtectedIntentScope,
-    arguments: dict,
-    sealed_digest: bytes,
-) -> RestartIntent:
-    return RestartIntent(
-        owner, scope, RestartRequest.model_validate(arguments), sealed_digest
-    )
+        return await read_restart_evidence(self._db, self._key, intent)
 
 
 class RestartFlow(SyntheticLookupFlow[RestartIntent]):

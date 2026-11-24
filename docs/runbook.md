@@ -76,6 +76,23 @@ SELECT * FROM m914_refund.attention('<execution-id>'::uuid);
 SELECT * FROM m914_refund.resume('<execution-id>'::uuid, 1, 'Synthetic ledger access restored');
 ```
 
+### Verify the Step 6 synthetic restart slice
+
+```sh
+TOOLMESH_TEST_SCHEMA_IMAGE=toolmesh-postgres-step6-test uv run --locked pytest -q tests/test_sandbox_restart_worker_postgres.py
+```
+
+On disposable revision `0011`, initialize the current synthetic restart ledger and install the [restart privileges](../tests/fixtures/m914_restart_verifier_privileges.sql) after the shared verifier fixture. Reprovision older disposable restart fixtures so the ledger records both boot generations and the original SEND owner. Start the worker with `TOOLMESH_SANDBOX_WORKER_RESTART_VERIFICATION_KEYS` in the same four-key format as the refund setting. Grant the worker login `m914_worker_access` and `m914_restart_verifier`, plus `m914_refund_verifier` when refund verification is configured. Use the slice's explicit parking call for expired marked restart SENDs.
+
+Restart discovery skips executions with malformed or ambiguous SEND markers. They remain `UNKNOWN` and require investigation of the original SEND evidence. Eligibility is checked again inside the fenced claim.
+
+Grant a separate operator login `m914_restart_operator` for restart attention and resume. Pass `'it.restart_service'` as the last argument to the shared SQL entry points.
+
+```sql
+SELECT * FROM m914_refund.attention('<execution-id>'::uuid, 'it.restart_service');
+SELECT * FROM m914_refund.resume('<execution-id>'::uuid, 1, 'Synthetic ledger access restored', 'it.restart_service');
+```
+
 ## Reproduce an evaluation
 
 [Discovery evaluation methodology and raw results](discovery-evaluation.md) documents the pinned model, dataset split, expected files and exact commands. Evaluation runs are administrator-only and use an isolated synthetic corpus.

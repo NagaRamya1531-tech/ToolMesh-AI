@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from gateway.config import SandboxWorkerSettings
 from gateway.execution_approval import ExecutionApprovals
-from gateway.execution_contracts import ExecutionLease
+from gateway.execution_contracts import ExecutionLease, ProtectedTool
 from gateway.execution_crypto import (
     CommandDigests,
     PayloadProtection,
@@ -33,8 +33,9 @@ from gateway.execution_crypto import (
 )
 from gateway.execution_store import CommandStoreError
 from gateway.sandbox_refund_evidence import read_refund_evidence
-from gateway.sandbox_refund_reconciliation import RefundReconciler
-from gateway.sandbox_refund_store import SandboxRefundStore
+from gateway.sandbox_refund_reconciliation import RefundReconciler, RestartReconciler
+from gateway.sandbox_refund_store import SandboxRefundStore, SandboxRestartStore
+from gateway.sandbox_restart_evidence import read_restart_evidence
 from gateway.sandbox_worker_store import SUPPORTED_REVISION, SandboxWorkerStore
 
 logger = logging.getLogger(__name__)
@@ -198,10 +199,12 @@ async def exercise(
                 logger.info("ownership_release result=unconfirmed")
 
 
-async def _poll_refunds(
+VerificationJob = tuple[SandboxRefundStore, RefundReconciler | RestartReconciler]
+
+
+async def _poll_verification(
     settings: SandboxWorkerSettings,
-    store: SandboxRefundStore,
-    reconciler: RefundReconciler,
+    jobs: tuple[VerificationJob, ...],
     stop: asyncio.Event,
     shutdown: ShutdownDeadline,
     send_checked: asyncio.Event,
@@ -212,42 +215,55 @@ async def _poll_refunds(
     verifier = uuid4()
     delay = settings.poll_seconds
     while not stop.is_set():
-        try:
-            for execution_id in await store.discover_due_synthetic_refunds(limit=1):
-                result = await reconciler.run_once(
-                    execution_id,
-                    verifier,
-                    stopping=stop.is_set,
-                    mutation=shutdown.verification_mutation,
-                )
-                if result is not None:
-                    logger.info(
-                        "refund_verified execution_id=%s state=%s", execution_id, result
+        # One candidate per enabled tool keeps a busy verification queue
+        # from monopolizing the lane. SEND renewal has a separate checkout.
+        for store, reconciler in jobs:
+            if stop.is_set():
+                return
+            label = "restart" if store.tool_id == "it.restart_service" else "refund"
+            try:
+                for execution_id in await store.discover_due_synthetic_refunds(limit=1):
+                    result = await reconciler.run_once(
+                        execution_id,
+                        verifier,
+                        stopping=stop.is_set,
+                        mutation=shutdown.verification_mutation,
                     )
-                    delay = settings.poll_seconds
-        except OwnershipUnconfirmed:
-            raise
-        except CommandStoreError as error:
-            if str(error) not in _BLOCKED | {
-                "REFUND_VERIFICATION_DISCOVERY_UNAVAILABLE"
-            }:
+                    if result is not None:
+                        logger.info(
+                            "%s_verified execution_id=%s state=%s",
+                            label,
+                            execution_id,
+                            result,
+                        )
+                        delay = settings.poll_seconds
+            except OwnershipUnconfirmed:
                 raise
-            logger.info("refund_verification_paused reason=%s", error)
+            except CommandStoreError as error:
+                if str(error) not in _BLOCKED | {
+                    "REFUND_VERIFICATION_DISCOVERY_UNAVAILABLE"
+                }:
+                    raise
+                logger.info("%s_verification_paused reason=%s", label, error)
         await _stopping(stop, uniform(delay / 2, delay))
         delay = min(settings.max_poll_seconds, 2 * delay)
 
 
-async def _exercise_with_refunds(
+async def _exercise_with_verification(
     settings: SandboxWorkerSettings,
     store: SandboxWorkerStore,
     stop: asyncio.Event,
     shutdown: ShutdownDeadline,
-    verification_store: SandboxRefundStore,
-    reconciler: RefundReconciler,
+    jobs: tuple[VerificationJob, ...],
 ) -> None:
     if stop.is_set():
         return
-    await verification_store.validate_access()
+    if len(jobs) == 1:
+        await jobs[0][0].validate_access()
+    else:
+        await jobs[0][0].validate_access(
+            tools=tuple(store.tool_id for store, _ in jobs)
+        )
     send_checked = asyncio.Event()
     tasks = (
         asyncio.create_task(
@@ -256,9 +272,7 @@ async def _exercise_with_refunds(
             )
         ),
         asyncio.create_task(
-            _poll_refunds(
-                settings, verification_store, reconciler, stop, shutdown, send_checked
-            )
+            _poll_verification(settings, jobs, stop, shutdown, send_checked)
         ),
     )
     try:
@@ -283,24 +297,26 @@ async def _exercise_with_refunds(
                 raise result
 
 
-def _refund_verification(
-    db: AsyncEngine, settings: SandboxWorkerSettings
-) -> tuple[SandboxRefundStore, RefundReconciler] | None:
-    if settings.refund_verification_keys is None:
-        return None
-    parts = settings.refund_verification_keys.get_secret_value().split(":")
+def _verification_job(
+    db: AsyncEngine, settings: SandboxWorkerSettings, keys: str, tool: ProtectedTool
+) -> VerificationJob:
+    parts = keys.split(":")
     if len(parts) != 4 or any(len(part) != 64 for part in parts):
-        raise ValueError("invalid sandbox refund verification keys")
+        raise ValueError("invalid sandbox verification keys")
     wrapping, lookup, intent, evidence = (bytes.fromhex(part) for part in parts)
     payloads = PayloadProtection(SandboxWrappingKeys({1: wrapping}, 1))
     approvals = ExecutionApprovals(
         db, payloads, CommandDigests(lookup, intent), timedelta(minutes=3)
     )
-    store = SandboxRefundStore(
-        db, approvals, timedelta(seconds=settings.lease_seconds), evidence
-    )
-    return store, RefundReconciler(
-        approvals, store, partial(read_refund_evidence, db, evidence)
+    lease = timedelta(seconds=settings.lease_seconds)
+    if tool == "it.restart_service":
+        restart = SandboxRestartStore(db, approvals, lease, evidence)
+        return restart, RestartReconciler(
+            approvals, restart, partial(read_restart_evidence, db, evidence)
+        )
+    refund = SandboxRefundStore(db, approvals, lease, evidence)
+    return refund, RefundReconciler(
+        approvals, refund, partial(read_refund_evidence, db, evidence)
     )
 
 
@@ -322,14 +338,37 @@ async def run(settings: SandboxWorkerSettings, shutdown: ShutdownDeadline) -> No
     db = create_async_engine(
         url,
         hide_parameters=True,
-        pool_size=2 if settings.refund_verification_keys is not None else 1,
+        pool_size=2
+        if (
+            settings.refund_verification_keys is not None
+            or settings.restart_verification_keys is not None
+        )
+        else 1,
         max_overflow=0,
         pool_timeout=2,
         pool_pre_ping=True,
         connect_args={"timeout": 2},
     )
     try:
-        refunds = _refund_verification(db, settings)
+        jobs = []
+        if settings.refund_verification_keys is not None:
+            jobs.append(
+                _verification_job(
+                    db,
+                    settings,
+                    settings.refund_verification_keys.get_secret_value(),
+                    "payments.issue_refund",
+                )
+            )
+        if settings.restart_verification_keys is not None:
+            jobs.append(
+                _verification_job(
+                    db,
+                    settings,
+                    settings.restart_verification_keys.get_secret_value(),
+                    "it.restart_service",
+                )
+            )
     except ValueError:
         await db.dispose()
         raise
@@ -351,8 +390,8 @@ async def run(settings: SandboxWorkerSettings, shutdown: ShutdownDeadline) -> No
     store = SandboxWorkerStore(db, timedelta(seconds=settings.lease_seconds))
     task = asyncio.create_task(
         exercise(settings, store, stop, shutdown=shutdown)
-        if refunds is None
-        else _exercise_with_refunds(settings, store, stop, shutdown, *refunds)
+        if not jobs
+        else _exercise_with_verification(settings, store, stop, shutdown, tuple(jobs))
     )
     waiter = asyncio.create_task(stop.wait())
     try:

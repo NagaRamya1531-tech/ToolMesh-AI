@@ -1,9 +1,10 @@
-"""Evidence-only refund reconciler for disposable PostgreSQL."""
+"""Shared evidence-only reconciliation for disposable PostgreSQL."""
 
 from asyncio import timeout
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager, nullcontext
 from datetime import timedelta
+from typing import Protocol
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -11,7 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from gateway.execution_approval import ExecutionApprovals
 from gateway.execution_contracts import (
+    ExecutionOwner,
     ExecutionState,
+    ProtectedIntentScope,
     RefundDeferralReason,
     RefundVerification,
     SyntheticOutcome,
@@ -19,17 +22,27 @@ from gateway.execution_contracts import (
 from gateway.execution_store import CommandStoreError
 from gateway.execution_worker_store import ExecutionWorkerStore
 from gateway.sandbox_refund_evidence import RefundIntent, RefundRequest
-from gateway.sandbox_refund_store import SandboxRefundStore
+from gateway.sandbox_refund_store import SandboxRefundStore, SandboxRestartStore
+from gateway.sandbox_restart_evidence import RestartIntent, restart_intent
 
 TOOL = "payments.issue_refund"
 
 
-class RefundReconciler:
+class VerificationIntent(Protocol):
+    @property
+    def binding(self) -> bytes: ...
+    def binding_preimage(self) -> bytes: ...
+
+
+class VerificationReconciler[Intent: VerificationIntent]:
     def __init__(
         self,
         approvals: ExecutionApprovals,
         store: ExecutionWorkerStore | SandboxRefundStore,
-        lookup: Callable[[RefundIntent], Awaitable[SyntheticOutcome | None]],
+        lookup: Callable[[Intent], Awaitable[SyntheticOutcome | None]],
+        build_intent: Callable[
+            [ExecutionOwner, ProtectedIntentScope, dict, bytes], Intent
+        ],
         *,
         defer_for: timedelta = timedelta(seconds=5),
     ):
@@ -38,6 +51,7 @@ class RefundReconciler:
         self._approvals = approvals
         self._store = store
         self._lookup = lookup
+        self._build_intent = build_intent
         self._defer_for = defer_for
 
     async def _finish(
@@ -96,12 +110,7 @@ class RefundReconciler:
                     ) = await self._approvals.read_sealed_dispatch_intent(
                         execution_id, TOOL
                     )
-                intent = RefundIntent(
-                    claim.sender,
-                    scope,
-                    RefundRequest.model_validate(args),
-                    sealed_digest,
-                )
+                intent = self._build_intent(claim.sender, scope, args, sealed_digest)
                 if intent.binding != claim.intent_binding:
                     raise CommandStoreError("EXECUTION_INTENT_MISMATCH")
                 evidence = await self._lookup(intent)
@@ -151,3 +160,33 @@ class RefundReconciler:
                     if committed is not None:
                         return committed
                 raise
+
+
+class RefundReconciler(VerificationReconciler[RefundIntent]):
+    def __init__(
+        self,
+        approvals: ExecutionApprovals,
+        store: ExecutionWorkerStore | SandboxRefundStore,
+        lookup: Callable[[RefundIntent], Awaitable[SyntheticOutcome | None]],
+        *,
+        defer_for: timedelta = timedelta(seconds=5),
+    ):
+        super().__init__(
+            approvals,
+            store,
+            lookup,
+            lambda owner, scope, args, digest: RefundIntent(
+                owner, scope, RefundRequest.model_validate(args), digest
+            ),
+            defer_for=defer_for,
+        )
+
+
+class RestartReconciler(VerificationReconciler[RestartIntent]):
+    def __init__(
+        self,
+        approvals: ExecutionApprovals,
+        store: SandboxRestartStore,
+        lookup: Callable[[RestartIntent], Awaitable[SyntheticOutcome | None]],
+    ):
+        super().__init__(approvals, store, lookup, restart_intent)

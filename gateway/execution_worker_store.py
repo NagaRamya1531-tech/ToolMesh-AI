@@ -46,9 +46,6 @@ _LOCK_EXECUTION = "SELECT id FROM executions WHERE id=:id FOR UPDATE"
 
 SyntheticAdmission = Callable[[AsyncConnection], Awaitable[bytes]]
 _SYNTHETIC_MARKER_ACTION = "SYNTHETIC_SEND_MARKED"
-_REFUND_MARKER_PREFIX = (
-    f"{_SYNTHETIC_MARKER_ACTION}:payments.issue_refund:refund-ledger.v2:"
-)
 
 
 def _synthetic_tool(contract: SyntheticEvidenceContract | None) -> str:
@@ -632,26 +629,29 @@ class ExecutionWorkerStore:
             await self._finish_marked(conn, owner, ExecutionState.UNKNOWN, now, None)
             return True
 
-    async def _lock_refund_send(
+    async def _lock_bound_send(
         self,
         conn: AsyncConnection,
         execution_id: UUID,
         *,
         outcome: str | None = "UNKNOWN",
+        contract: SyntheticEvidenceContract | None = None,
     ) -> tuple[ExecutionOwner, bytes] | None:
-        """Read the original protected refund marker under the execution lock."""
+        """Read the original protected marker under the execution lock."""
+        prefix = _synthetic_marker_action(bytes(32), contract).rsplit(":", 1)[0] + ":"
         sends = await rows(
             conn,
             """
             SELECT a.worker_id, a.generation FROM execution_attempts a
             JOIN execution_commands c USING (execution_id)
-            WHERE a.execution_id=:id AND c.tool_id='payments.issue_refund'
+            WHERE a.execution_id=:id AND c.tool_id=:tool
               AND a.kind='SEND' AND a.send_marked_at IS NOT NULL
               AND a.outcome IS NOT DISTINCT FROM CAST(:outcome AS text)
             FOR UPDATE OF a
             """,
             id=execution_id,
             outcome=outcome,
+            tool=_synthetic_tool(contract),
         )
         if len(sends) != 1:
             return None
@@ -663,33 +663,40 @@ class ExecutionWorkerStore:
               AND starts_with(action,:prefix)
             """,
             id=execution_id,
-            prefix=_REFUND_MARKER_PREFIX,
+            prefix=prefix,
         )
         if not markers:
             return None
         if len(markers) != 1:
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         try:
-            binding = bytes.fromhex(
-                markers[0]["action"].removeprefix(_REFUND_MARKER_PREFIX)
-            )
+            binding = bytes.fromhex(markers[0]["action"].removeprefix(prefix))
         except ValueError:
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH") from None
         if len(binding) != 32:
             raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
         sender = ExecutionOwner(execution_id=execution_id, **sends[0])
-        await self._verify_marker_contract(conn, sender, binding, None)
+        await self._verify_marker_contract(conn, sender, binding, contract)
         return sender, binding
 
     async def recover_expired_synthetic_refund(self, owner: ExecutionOwner) -> bool:
         """Park an expired bound refund without issuing or authorizing a send."""
+        return await self._recover_expired_bound_send(owner, None)
+
+    async def recover_expired_synthetic_restart(self, owner: ExecutionOwner) -> bool:
+        """Park an expired restart for verification by its original operation."""
+        return await self._recover_expired_bound_send(owner, "it-restart-ledger.v1")
+
+    async def _recover_expired_bound_send(
+        self, owner: ExecutionOwner, contract: SyntheticEvidenceContract | None
+    ) -> bool:
         self._require_synthetic_sandbox()
         async with self._transaction() as (conn, _):
             locked = await self._lock_marked(conn, owner)
             if not locked:
                 return False
-            original = await self._lock_refund_send(
-                conn, owner.execution_id, outcome=None
+            original = await self._lock_bound_send(
+                conn, owner.execution_id, outcome=None, contract=contract
             )
             if original is None or original[0] != owner:
                 return False
@@ -697,7 +704,15 @@ class ExecutionWorkerStore:
             if now < locked[0]["lease_expires_at"]:
                 return False
             await self._finish_marked(
-                conn, owner, ExecutionState.UNKNOWN, now, None, next_check_at=now
+                conn,
+                owner,
+                ExecutionState.UNKNOWN,
+                now,
+                None,
+                next_check_at=now,
+                audit_action="SYNTHETIC_RESTART_SEND_PARKED"
+                if contract is not None
+                else None,
             )
             return True
 
@@ -733,7 +748,7 @@ class ExecutionWorkerStore:
             command = await self._lock_refund_unknown(conn, execution_id)
             if command is None:
                 return None
-            original = await self._lock_refund_send(conn, execution_id)
+            original = await self._lock_bound_send(conn, execution_id)
             if original is None:
                 return None
             now = await self._clock(conn)
@@ -825,7 +840,7 @@ class ExecutionWorkerStore:
                 or command["lease_expires_at"] != claim.lease.expires_at
             ):
                 return None
-            original = await self._lock_refund_send(conn, owner.execution_id)
+            original = await self._lock_bound_send(conn, owner.execution_id)
             if original != (claim.sender, claim.intent_binding):
                 raise CommandStoreError("SYNTHETIC_EVIDENCE_MISMATCH")
             attempts = await rows(
@@ -894,6 +909,7 @@ class ExecutionWorkerStore:
         evidence_source: Literal["RESPONSE", "LOOKUP"] = "RESPONSE",
         expected_state: ExecutionState = ExecutionState.DISPATCHING,
         next_check_at: datetime | None = None,
+        audit_action: str | None = None,
     ) -> None:
         finished = await rows(
             conn,
@@ -960,7 +976,9 @@ class ExecutionWorkerStore:
             if expected_state is ExecutionState.UNKNOWN
             else "SYNTHETIC"
         )
-        await self._synthetic_audit(conn, owner, f"{action_prefix}_{target.value}")
+        await self._synthetic_audit(
+            conn, owner, audit_action or f"{action_prefix}_{target.value}"
+        )
 
     async def read_synthetic_attempt(
         self, owner: ExecutionOwner, evidence: SyntheticOutcome | None = None

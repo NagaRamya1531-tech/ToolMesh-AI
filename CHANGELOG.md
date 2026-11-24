@@ -1,5 +1,13 @@
 # Changelog
 
+## M9.1.4 Step 6 · Synthetic IT restart verification
+
+- Added explicit parking for expired marked restart SENDs and automatic VERIFY discovery in the disposable worker. SEND renewal retains its own database checkout, and the verification lane considers one candidate per enabled tool each poll.
+- The restart outcome row records the original tenant, service, SEND owner and generation, and the committed before-and-after boot generations. Scoped PostgreSQL functions require that proof before creating a canonical restart receipt. A committed no-effect reservation can close as failed. Missing or mismatched evidence leaves the command unknown.
+- Restart verification uses the existing retry windows and a separate operator role. PostgreSQL protects restart parking and verification audit events from unauthorized writes.
+- Restart discovery and fenced claims share the original SEND marker check. Malformed and duplicate markers stay `UNKNOWN` and cannot block later eligible restarts.
+- Passed 34 restart and 64 refund verification cases on fresh and upgraded PostgreSQL. Another 414 regression cases passed and two Compose-dependent cases were skipped. Ruff lint and formatting, mypy, and Git whitespace checks passed.
+
 ## M9.1.4 Step 6 · Bounded synthetic refund verification
 
 - Added database-backed verification windows with an attempt limit, an elapsed deadline, capped exponential backoff, optional deterministic jitter, and a lookup timeout. A committed claim spends an attempt even if the verifier crashes.

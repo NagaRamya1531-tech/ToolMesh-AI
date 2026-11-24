@@ -60,11 +60,12 @@ async def configure(
 
 
 @asynccontextmanager
-async def operator_login(db):
+async def operator_login(db, *, restart=False):
+    role = "m914_restart_operator" if restart else "m914_refund_operator"
     async with db.begin() as conn:
         await execute(
             conn,
-            f"CREATE ROLE {OPERATOR} LOGIN PASSWORD '{PASSWORD}' IN ROLE m914_refund_operator",
+            f"CREATE ROLE {OPERATOR} LOGIN PASSWORD '{PASSWORD}' IN ROLE {role}",
         )
         await execute(conn, f"GRANT CONNECT ON DATABASE toolmesh TO {OPERATOR}")
     engine = create_async_engine(
@@ -79,19 +80,22 @@ async def operator_login(db):
             await execute(conn, f"DROP ROLE {OPERATOR}")
 
 
-async def attention(engine, ident):
+async def attention(engine, ident, *, tool="payments.issue_refund"):
     async with engine.connect() as conn:
-        return await rows(conn, "SELECT * FROM m914_refund.attention(:id)", id=ident)
+        return await rows(
+            conn, "SELECT * FROM m914_refund.attention(:id,:tool)", id=ident, tool=tool
+        )
 
 
-async def resume(engine, ident, window):
+async def resume(engine, ident, window, *, tool="payments.issue_refund"):
     async with engine.begin() as conn:
         return await rows(
             conn,
-            "SELECT * FROM m914_refund.resume(:id,:window,:reason)",
+            "SELECT * FROM m914_refund.resume(:id,:window,:reason,:tool)",
             id=ident,
             window=window,
             reason="Checked synthetic ledger availability",
+            tool=tool,
         )
 
 

@@ -43,15 +43,23 @@ PASSWORD = "disposable-refund-verifier"
 
 
 @asynccontextmanager
-async def worker_login(db):
+async def worker_login(db, *, refund=True, restart=False):
     async with db.begin() as conn:
         driver = (await conn.get_raw_connection()).driver_connection
         await driver.execute(PROVISION.read_text())
         await driver.execute(GRANTS.read_text())
+        roles = ["m914_worker_access"]
+        if refund:
+            roles.append("m914_refund_verifier")
+        if restart:
+            await driver.execute(
+                GRANTS.with_name("m914_restart_verifier_privileges.sql").read_text()
+            )
+            roles.append("m914_restart_verifier")
         await execute(
             conn,
             f"CREATE ROLE {LOGIN} LOGIN PASSWORD '{PASSWORD}' "
-            "IN ROLE m914_worker_access, m914_refund_verifier",
+            f"IN ROLE {', '.join(roles)}",
         )
         await execute(conn, f"GRANT CONNECT ON DATABASE toolmesh TO {LOGIN}")
     worker_db = create_async_engine(
@@ -66,6 +74,8 @@ async def worker_login(db):
             await execute(conn, "DROP SCHEMA m914_ownership CASCADE")
             for role in (
                 LOGIN,
+                "m914_restart_operator",
+                "m914_restart_verifier",
                 "m914_refund_operator",
                 "m914_refund_verifier",
                 "m914_refund_function_owner",

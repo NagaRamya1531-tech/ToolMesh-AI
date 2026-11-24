@@ -47,3 +47,4 @@ class SandboxWorkerSettings(BaseSettings):
     max_poll_seconds: float = Field(default=2, gt=0, le=30)
     drain_seconds: float = Field(default=4, gt=0, le=30)
     refund_verification_keys: SecretStr | None = None
+    restart_verification_keys: SecretStr | None = None
